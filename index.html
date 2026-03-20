@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>Cell World: Evolution - Global Edition</title>
+<!-- 引入 Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<style>
+    :root { --primary: #00ff88; --danger: #ff3333; --bg: #0a0a0c; }
+    body { margin: 0; overflow: hidden; background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; }
+    canvas { display: block; }
+    canvas.playing { cursor: none; }
+
+    /* 優化後的選單與結算 UI */
+    .overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(15, 20, 25, 0.98); padding: 40px; border-radius: 20px; border: 1px solid #334; text-align: center; width: 380px; backdrop-filter: blur(15px); box-shadow: 0 20px 50px rgba(0,0,0,0.5); z-index: 100; }
+    
+    h1 { color: var(--primary); letter-spacing: 5px; margin-bottom: 30px; text-shadow: 0 0 15px rgba(0,255,136,0.3); }
+    
+    input { width: 90%; padding: 12px; border-radius: 8px; border: 1px solid #445; background: #111; color: white; margin-bottom: 15px; text-align: center; font-size: 16px; }
+    button { width: 100%; padding: 15px; border-radius: 8px; border: none; background: linear-gradient(135deg, #00aa55, var(--primary)); color: #000; font-weight: bold; cursor: pointer; font-size: 18px; transition: 0.3s; }
+    button:hover { transform: scale(1.02); box-shadow: 0 0 20px rgba(0,255,136,0.4); }
+
+    /* 全球排行榜樣式 */
+    #leaderboard { position: fixed; right: 20px; top: 20px; background: rgba(0,0,0,0.6); padding: 15px; border-radius: 10px; min-width: 180px; pointer-events: none; border: 1px solid #333; }
+    .lb-row { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px; }
+    .lb-row.me { color: var(--primary); font-weight: bold; }
+
+    /* 結算畫面特有樣式 */
+    #deathScreen { display: none; }
+    .stat-box { display: flex; justify-content: space-around; margin: 20px 0; background: #1a1a20; padding: 15px; border-radius: 10px; }
+    .stat-item { display: flex; flex-direction: column; }
+    .stat-val { font-size: 24px; color: var(--primary); font-weight: bold; }
+    .stat-label { font-size: 12px; color: #888; }
+</style>
+</head>
+<body>
+
+<!-- 開始選單 -->
+<div id="startMenu" class="overlay">
+    <h1>CELL WORLD</h1>
+    <input id="playerName" list="nameHistory" placeholder="輸入演化代碼..." maxlength="12">
+    <datalist id="nameHistory"></datalist>
+    <button onclick="initGame()">開始演化</button>
+    <p style="font-size: 12px; color: #666; margin-top: 15px;">按 W 餵食 / Space 分裂 / E 技能</p>
+</div>
+
+<!-- 結算畫面 -->
+<div id="deathScreen" class="overlay">
+    <h2 style="color:var(--danger)">演化中斷</h2>
+    <div class="stat-box">
+        <div class="stat-item">
+            <span class="stat-val" id="resMass">0</span>
+            <span class="stat-label">最高質量</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-val" id="resTime">0s</span>
+            <span class="stat-label">存活時間</span>
+        </div>
+    </div>
+    <div id="globalRankText" style="margin-bottom: 20px; font-size: 14px; color: #aaa;">正在同步全球排名...</div>
+    <button onclick="location.reload()">重新演化</button>
+</div>
+
+<!-- 遊戲 UI -->
+<div id="leaderboard">
+    <div style="text-align:center; color:var(--primary); font-weight:bold; margin-bottom:10px;">全球霸主榜</div>
+    <div id="lbContent"></div>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+// --- 1. Firebase 配置 (請替換成你自己的) ---
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+  projectId: "YOUR_PROJECT_ID",
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// --- 2. 核心變數 ---
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+let WORLD_SIZE = 8000;
+let playerCells = [], entities = [], foods = [], powerups = [];
+let gameRunning = false, startTime = 0;
+let camera = { x: 4000, y: 4000, scale: 1 };
+let mouseX = 0, mouseY = 0;
+let myId = "p_" + Math.random().toString(36).substr(2, 5);
+
+// 暱稱記憶
+const savedNames = JSON.parse(localStorage.getItem('cellNames') || '[]');
+const dl = document.getElementById('nameHistory');
+savedNames.forEach(n => { let o = document.createElement('option'); o.value = n; dl.appendChild(o); });
+
+// --- 3. 類別定義 (優化美術與效能) ---
+class Cell {
+    constructor(x, y, mass, name, id, isBot = true) {
+        this.x = x; this.y = y; this.id = id; this.name = name;
+        this.isBot = isBot; this.vx = 0; this.vy = 0;
+        this.mass = mass; this.r = 0; 
+        this.updateMass(mass);
+        this.color = `hsl(${isBot ? Math.random()*360 : 160}, 80%, 50%)`;
+        this.targetAngle = Math.random() * Math.PI * 2;
+    }
+    updateMass(m) { 
+        this.mass = m; 
+        this.r = 20 + Math.pow(this.mass, 0.45) * 2.2; // 體量感提升
+    }
+    draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        // 繪製漸層果凍感
+        let grad = ctx.createRadialGradient(0, 0, this.r * 0.1, 0, 0, this.r);
+        grad.addColorStop(0, "#fff"); grad.addColorStop(0.2, this.color); grad.addColorStop(1, "#000");
+        ctx.fillStyle = grad;
+        
+        ctx.beginPath();
+        let pts = 16;
+        for(let i=0; i<=pts; i++) {
+            let a = (i/pts) * Math.PI * 2;
+            let wobble = Math.sin(a * 5 + Date.now()*0.005) * (this.r * 0.03);
+            let px = Math.cos(a)*(this.r + wobble), py = Math.sin(a)*(this.r + wobble);
+            if(i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.fill();
+        
+        // 只顯示名字，不顯示重量 (去贅)
+        if(this.r > 25) {
+            ctx.fillStyle = "white"; ctx.textAlign = "center"; ctx.font = `bold ${this.r * 0.4}px Arial`;
+            ctx.fillText(this.name, 0, this.r * 0.1);
+        }
+        ctx.restore();
+    }
+}
+
+// --- 4. 遊戲邏輯 ---
+function initGame() {
+    const name = document.getElementById("playerName").value || "Cell";
+    if(!savedNames.includes(name)) { 
+        savedNames.push(name); 
+        localStorage.setItem('cellNames', JSON.stringify(savedNames.slice(-5))); 
+    }
+    
+    document.getElementById("startMenu").style.display = "none";
+    canvas.classList.add("playing");
+    
+    // 初始化玩家
+    let p = new Cell(WORLD_SIZE/2, WORLD_SIZE/2, 60, name, myId, false);
+    playerCells.push(p); entities.push(p);
+    
+    // 初始化極具挑戰性的 AI
+    for(let i=0; i<60; i++) {
+        entities.push(new Cell(Math.random()*WORLD_SIZE, Math.random()*WORLD_SIZE, 30+Math.random()*200, "Bot_"+i, "bot_"+i));
+    }
+    // 食物
+    for(let i=0; i<2000; i++) spawnFood();
+    
+    startTime = Date.now();
+    gameRunning = true;
+    loop();
+}
+
+function spawnFood() {
+    foods.push({ x: Math.random()*WORLD_SIZE, y: Math.random()*WORLD_SIZE, r: 5, color: `hsl(${Math.random()*360}, 70%, 60%)` });
+}
+
+function loop() {
+    if(!gameRunning) return;
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+function update() {
+    // 1. 玩家控制
+    if(playerCells.length > 0) {
+        let worldMX = mouseX / camera.scale + camera.x;
+        let worldMY = mouseY / camera.scale + camera.y;
+        playerCells.forEach(c => {
+            let angle = Math.atan2(worldMY - c.y, worldMX - c.x);
+            let dist = Math.hypot(worldMY - c.y, worldMX - c.x);
+            let speed = 6 * Math.pow(100/c.mass, 0.2);
+            if(dist > 10) {
+                c.vx = Math.cos(angle) * speed;
+                c.vy = Math.sin(angle) * speed;
+                c.x += c.vx; c.y += c.vy;
+            }
+        });
+        
+        // 攝影機追蹤
+        let cenX = playerCells[0].x, cenY = playerCells[0].y;
+        camera.x += (cenX - canvas.width/2/camera.scale - camera.x) * 0.1;
+        camera.y += (cenY - canvas.height/2/camera.scale - camera.y) * 0.1;
+    } else {
+        gameOver();
+    }
+
+    // 2. AI 戰術更新 (更具攻擊性)
+    entities.forEach(e => {
+        if(!e.isBot) return;
+        // AI 邏輯簡化：追逐比自己小的，逃離比自己大的
+        let target = null, minDist = 800;
+        entities.forEach(other => {
+            if(e === other) return;
+            let d = Math.hypot(e.x - other.x, e.y - other.y);
+            if(d < minDist) {
+                if(e.mass > other.mass * 1.2) { e.targetAngle = Math.atan2(other.y - e.y, other.x - e.x); }
+                else if (other.mass > e.mass * 1.2) { e.targetAngle = Math.atan2(e.y - other.y, e.x - other.x); }
+            }
+        });
+        e.x += Math.cos(e.targetAngle) * 3;
+        e.y += Math.sin(e.targetAngle) * 3;
+    });
+
+    // 3. 吞噬判定
+    for(let i=entities.length-1; i>=0; i--) {
+        let a = entities[i];
+        for(let j=entities.length-1; j>=0; j--) {
+            if(i === j) continue;
+            let b = entities[j];
+            let d = Math.hypot(a.x - b.x, a.y - b.y);
+            if(d < a.r && a.mass > b.mass * 1.15) {
+                a.updateMass(a.mass + b.mass);
+                entities.splice(j, 1);
+                if(b.id === myId) playerCells = playerCells.filter(c => c !== b);
+            }
+        }
+        // 吃食物
+        for(let f=foods.length-1; f>=0; f--) {
+            if(Math.hypot(a.x - foods[f].x, a.y - foods[f].y) < a.r) {
+                a.updateMass(a.mass + 2);
+                foods.splice(f, 1);
+                spawnFood();
+            }
+        }
+    }
+    
+    // 4. 定時上傳分數到 Firebase 排行榜 (每 3 秒)
+    if(Date.now() % 3000 < 20 && playerCells.length > 0) {
+        uploadScore(playerCells[0].name, playerCells[0].mass);
+    }
+}
+
+function draw() {
+    ctx.fillStyle = "#0a0a0c"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.scale(camera.scale, camera.scale);
+    ctx.translate(-camera.x, -camera.y);
+    
+    // 畫網格
+    ctx.strokeStyle = "#111"; ctx.lineWidth = 2;
+    for(let i=0; i<WORLD_SIZE; i+=100) { ctx.moveTo(i,0); ctx.lineTo(i, WORLD_SIZE); ctx.moveTo(0,i); ctx.lineTo(WORLD_SIZE, i); }
+    ctx.stroke();
+
+    foods.forEach(f => { ctx.fillStyle = f.color; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill(); });
+    entities.sort((a,b)=>a.mass - b.mass).forEach(e => e.draw(ctx));
+    
+    ctx.restore();
+}
+
+// --- 5. 功能函數 ---
+function uploadScore(name, mass) {
+    db.ref('leaderboard/' + myId).set({ name: name, score: Math.floor(mass) });
+}
+
+// 監聽排行榜更新
+db.ref('leaderboard').orderByChild('score').limitToLast(10).on('value', snap => {
+    let list = [];
+    snap.forEach(child => { list.push(child.val()); });
+    list.reverse();
+    let html = list.map((v, i) => `<div class="lb-row ${v.name === (playerCells[0]?.name) ? 'me':''}"><span>${i+1}. ${v.name}</span><span>${v.score}</span></div>`).join('');
+    document.getElementById("lbContent").innerHTML = html;
+});
+
+function gameOver() {
+    gameRunning = false;
+    canvas.classList.remove("playing");
+    const dur = Math.floor((Date.now() - startTime)/1000);
+    const finalMass = Math.floor(entities.find(e => e.id === myId)?.mass || 0);
+    
+    document.getElementById("resMass").innerText = finalMass;
+    document.getElementById("resTime").innerText = dur + "s";
+    document.getElementById("deathScreen").style.display = "block";
+    
+    // 結算名次
+    db.ref('leaderboard').orderByChild('score').once('value', snap => {
+        let count = snap.numChildren();
+        let rank = count;
+        snap.forEach(c => { if(c.val().score <= finalMass) rank--; });
+        document.getElementById("globalRankText").innerText = `全球排名：第 ${rank + 1} 名 (共 ${count} 位玩家)`;
+    });
+}
+
+window.onmousemove = e => { mouseX = e.clientX; mouseY = e.clientY; };
+window.onresize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+window.onresize();
+</script>
+</body>
+</html>
+    
