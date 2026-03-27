@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Cell World: Evolution — Global Edition</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;600;700;900&display=swap');
+
+  :root {
+    --primary: #00ff88;
+    --danger:  #ff3355;
+    --accent:  #00ddff;
+    --gold:    #ffbb44;
+    --bg:      #060810;
+    --glass:   rgba(8, 14, 24, 0.88);
+    --border:  rgba(0, 255, 136, 0.18);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    margin: 0; overflow: hidden;
+    background: var(--bg);
+    color: white;
+    font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+    user-select: none; -webkit-user-select: none;
+  }
+
+  canvas { display: block; touch-action: none; }
+  canvas.playing { cursor: none; }
+
+  /* ── Scanline overlay ── */
+  body::after {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 999;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(0, 0, 0, 0.04) 2px, rgba(0, 0, 0, 0.04) 4px
+    );
+  }
+
+  /* ── Menu ── */
+  #menu {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--glass);
+    padding: 44px 40px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    text-align: center; z-index: 10;
+    width: 88%; max-width: 420px;
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 0 60px rgba(0, 255, 136, 0.08), 0 20px 60px rgba(0,0,0,0.7);
+  }
+
+  .menu-logo {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(26px, 6vw, 40px);
+    font-weight: 900;
+    letter-spacing: 6px;
+    color: var(--primary);
+    text-shadow: 0 0 20px rgba(0,255,136,0.5), 0 0 60px rgba(0,255,136,0.2);
+    margin: 0 0 6px;
+  }
+  .menu-sub {
+    font-size: 11px;
+    letter-spacing: 4px;
+    color: rgba(0,255,136,0.45);
+    text-transform: uppercase;
+    margin: 0 0 28px;
+  }
+
+  .instruction {
+    text-align: left;
+    background: rgba(0,0,0,0.35);
+    padding: 14px 16px;
+    border-radius: 10px;
+    margin-bottom: 22px;
+    font-size: 13px;
+    line-height: 1.9;
+    color: #b0b8cc;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .instruction span { color: var(--primary); font-weight: 700; }
+  .instruction b { color: #dde; }
+
+  input {
+    width: 100%; padding: 14px 16px; font-size: 15px;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 255, 136, 0.25);
+    background: rgba(0, 0, 0, 0.45);
+    color: white; margin-bottom: 18px; outline: none;
+    text-align: center;
+    font-family: 'Rajdhani', sans-serif; font-size: 16px; letter-spacing: 1px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  input::placeholder { color: rgba(255,255,255,0.3); }
+  input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 14px rgba(0,255,136,0.3);
+  }
+
+  .start-btn {
+    width: 100%; padding: 15px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 15px; font-weight: 700; letter-spacing: 2px;
+    cursor: pointer;
+    background: linear-gradient(135deg, #009944, var(--primary));
+    color: #001a0e;
+    border: none; border-radius: 10px;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .start-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(0,255,136,0.45);
+  }
+  .start-btn:active { transform: scale(0.97); }
+
+  /* ── HUD ── */
+  #ui {
+    position: fixed; top: 20px; left: 20px;
+    display: none; pointer-events: none; z-index: 5;
+  }
+  .mass-display {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 22px; font-weight: 700;
+    text-shadow: 0 0 10px rgba(0,255,136,0.6);
+    margin-bottom: 6px;
+  }
+  .mass-display span { color: var(--primary); }
+  .inventory-slot {
+    display: inline-block; padding: 5px 14px;
+    background: rgba(0,0,0,0.55);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    font-size: 13px; color: #aac;
+  }
+  .inventory-slot.active { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Music toggle ── */
+  #musicToggle {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--glass);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.7);
+    padding: 8px 20px; border-radius: 20px;
+    cursor: pointer; z-index: 10; display: none;
+    backdrop-filter: blur(8px);
+    font-family: 'Rajdhani', sans-serif; font-size: 13px;
+    transition: color 0.3s, border-color 0.3s;
+  }
+  #musicToggle:hover { color: white; border-color: var(--primary); }
+
+  /* ── Leaderboard ── */
+  #leaderboardContainer {
+    position: fixed; right: 20px; top: 20px;
+    display: none; z-index: 5; width: 210px; pointer-events: none;
+  }
+  .lb-box {
+    background: rgba(4, 8, 18, 0.72);
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 10px;
+    backdrop-filter: blur(8px);
+  }
+  .lb-header {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700; font-size: 11px; letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--primary);
+    border-bottom: 1px solid rgba(0,255,136,0.2);
+    padding-bottom: 8px; margin-bottom: 10px;
+    text-align: center;
+  }
+  .lb-header.gold { color: var(--gold); border-color: rgba(255,187,68,0.3); }
+  .lb-entry {
+    margin-bottom: 6px; font-size: 12px;
+    display: flex; justify-content: space-between; align-items: center;
+    color: #8899bb;
+  }
+  .lb-entry.me { color: var(--primary); font-weight: 700; }
+  .lb-rank { color: rgba(255,255,255,0.3); margin-right: 5px; font-size: 10px; }
+
+  /* ── Death screen ── */
+  #deathScreen {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.95);
+    display: none; flex-direction: column;
+    justify-content: center; align-items: center;
+    z-index: 20; backdrop-filter: blur(12px);
+    text-align: center;
+  }
+  #deathScreen h2 {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--danger);
+    font-size: clamp(28px, 7vw, 56px);
+    text-shadow: 0 0 30px rgba(255,51,85,0.6);
+    margin: 0 0 4px;
+    letter-spacing: 3px;
+  }
+  .death-sub { color: rgba(255,255,255,0.3); font-size: 13px; margin-bottom: 30px; letter-spacing: 2px; }
+  .stat-box {
+    display: flex; gap: 40px;
+    background: rgba(255,255,255,0.04);
+    padding: 22px 36px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 24px;
+  }
+  .stat-item { display: flex; flex-direction: column; align-items: center; }
+  .stat-val {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 30px; color: var(--primary); font-weight: 700;
+  }
+  .stat-label { font-size: 11px; color: #556; margin-top: 5px; letter-spacing: 1px; text-transform: uppercase; }
+  #globalRankText { font-size: 14px; color: #8899aa; margin-bottom: 28px; }
+
+  /* ── Mobile controls ── */
+  #mobile-controls {
+    display: none;
+    position: fixed; bottom: 28px; right: 18px;
+    gap: 12px; z-index: 10;
+  }
+  .mob-btn {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: rgba(0, 255, 136, 0.1);
+    border: 2px solid rgba(0, 255, 136, 0.5);
+    color: white; font-weight: 700; font-size: 12px;
+    display: flex; flex-direction: column; justify-content: center;
+    align-items: center; text-align: center; line-height: 1.3;
+    backdrop-filter: blur(8px); user-select: none;
+    -webkit-user-select: none; transition: background 0.1s, transform 0.1s;
+  }
+  .mob-btn:active { background: rgba(0, 255, 136, 0.4); transform: scale(0.92); }
+  .mob-btn.skill { border-color: rgba(0, 220, 255, 0.5); }
+
+  @media (max-width: 768px) {
+    #mobile-controls { display: flex; }
+    #leaderboardContainer { display: none !important; }
+    .instruction { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="menu">
+  <p class="menu-logo">CELL WORLD</p>
+  <p class="menu-sub">Global Evolution</p>
+  <div class="instruction">
+    💻 <b>電腦版</b><br>
+    滑鼠移動 ｜ <span>空白鍵</span>：分裂 ｜ <span>W</span>：餵食 ｜ <span>E</span>：加速技能
+    <br><br>
+    📱 <b>手機版</b><br>
+    滑動控制方向 ｜ 右下角按鈕施放技能
+  </div>
+  <input id="playerName" list="savedNameList" placeholder="輸入你的演化代碼..." autocomplete="off" maxlength="12">
+  <datalist id="savedNameList"></datalist>
+  <button class="start-btn" onclick="startGame()">▶ 進入全球演化</button>
+</div>
+
+<button id="musicToggle" onclick="toggleMusic()">♪ 音樂：關</button>
+
+<div id="ui">
+  <div class="mass-display">質量：<span id="massDisplay">0</span></div>
+  <div>武裝：<span id="inventorySlot" class="inventory-slot">空</span></div>
+</div>
+
+<div id="mobile-controls">
+  <div class="mob-btn" ontouchstart="executeEject()">餵食<br>W</div>
+  <div class="mob-btn" ontouchstart="executeSplit()">分裂<br>空白</div>
+  <div class="mob-btn skill" ontouchstart="executePowerUp()">技能<br>E</div>
+</div>
+
+<div id="leaderboardContainer">
+  <div class="lb-box">
+    <div class="lb-header">📍 區域戰況</div>
+    <div id="local-lb-content"></div>
+  </div>
+  <div class="lb-box" style="border-color:rgba(255,187,68,0.2);">
+    <div class="lb-header gold">🏆 全球名人堂</div>
+    <div id="global-lb-content" style="color:#556; font-size:12px;">載入中...</div>
+  </div>
+</div>
+
+<div id="deathScreen">
+  <h2>演化中斷</h2>
+  <p class="death-sub">YOUR CELLS HAVE BEEN CONSUMED</p>
+  <div class="stat-box">
+    <div class="stat-item">
+      <span class="stat-val" id="resMass">0</span>
+      <span class="stat-label">最高質量</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-val" id="resTime">0s</span>
+      <span class="stat-label">存活時間</span>
+    </div>
+  </div>
+  <div id="globalRankText">正在同步全球排名...</div>
+  <button class="start-btn" style="width:210px;" onclick="location.reload()">↺ 重新演化</button>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+// =====================================================
+// 1. FIREBASE 配置（請替換成你自己的金鑰）
+// =====================================================
+const firebaseConfig = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+  databaseURL:       "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+};
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// =====================================================
+// 2. 音樂系統
+// =====================================================
+// 修正：更換為可以直接讀取的環境音樂網址 (MP3/OGG)
+// 若要使用自訂音樂，請確保連結結尾為 .mp3 等音源檔格式
+const bgm = new Audio('https://freemusicarchive.org/track/ambient-space/download'); 
+bgm.loop = true; bgm.volume = 0.4;
+let isMusicPlaying = false;
+
+function toggleMusic() {
+  const btn = document.getElementById('musicToggle');
+  if (isMusicPlaying) {
+    bgm.pause();
+    btn.innerText = '♪ 音樂：關';
+  } else {
+    bgm.play().catch(() => {});
+    btn.innerText = '♫ 音樂：開';
+  }
+  isMusicPlaying = !isMusicPlaying;
+}
+
+// =====================================================
+// 3. 核心設定與變數
+// =====================================================
+const canvas = document.getElementById('game');
+const ctx    = canvas.getContext('2d', { alpha: false });
+canvas.width  = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const WORLD_SIZE = 8000;
+const MAX_BOTS   = 60;
+const MAX_FOOD   = 2000;
+
+let entities       = [];   // 所有 Cell 物件（玩家 + AI + 生態域生物）
+let foods          = [];   // 食物點
+let ejectedPellets = [];   // 玩家噴出的食丸
+let playerCells    = [];   // 玩家控制的所有細胞
+let remotePlayers  = {};   // Firebase 遠端玩家快照
+
+let gameRunning = false;
+let startTime   = 0;
+let peakMass    = 0;
+let powerupActive  = false;
+let powerupEndTime = 0;
+
+let mouseX = canvas.width  / 2;
+let mouseY = canvas.height / 2;
+let camera = { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2, scale: 1 };
+
+const playerId = 'p_' + Math.random().toString(36).substr(2, 9);
+
+// =====================================================
+// 4. 輸入：滑鼠、觸控、鍵盤
+// =====================================================
+document.addEventListener('mousemove', e => {
+  mouseX = e.clientX; mouseY = e.clientY;
+});
+
+canvas.addEventListener('touchstart', handleTouch, { passive: false });
+canvas.addEventListener('touchmove',  handleTouch, { passive: false });
+function handleTouch(e) {
+  if (gameRunning) e.preventDefault();
+  mouseX = e.touches[0].clientX;
+  mouseY = e.touches[0].clientY;
+}
+
+document.addEventListener('keydown', e => {
+  if (!gameRunning) return;
+  if (e.code === 'Space')  { e.preventDefault(); executeSplit(); }
+  if (e.code === 'KeyW')   executeEject();
+  if (e.code === 'KeyE')   executePowerUp();
+});
+
+(function loadSavedNames() {
+  const saved = JSON.parse(localStorage.getItem('cellWorldNames') || '[]');
+  const dl = document.getElementById('savedNameList');
+  saved.forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n; dl.appendChild(opt);
+  });
+})();
+
+// =====================================================
+// 5. Cell 類別（含美術、物理）
+// =====================================================
+class Cell {
+  constructor(x, y, mass, name, id, isBot = true, type = 'normal') {
+    this.x = x; this.y = y;
+    this.id = id; this.name = name; this.isBot = isBot;
+    this.type = type; // normal, algae, predator
+
+    this.splitVx = 0; this.splitVy = 0;
+    this.mergeTimer = 0;
+    this.targetChangeCd = 0;
+    this.targetAngle = Math.random() * Math.PI * 2;
+
+    // ── 美術優化：不規則、單一純色（不會刺眼） ──
+    if (this.type === 'algae') {
+      this.colorStr = '#2e8b57'; // 浮游藻類為偏暗的海藻綠
+    } else if (this.type === 'predator') {
+      this.colorStr = '#b03040'; // 掠食者為暗紅色
+    } else {
+      // 降低飽和度與亮度，避免螢光色
+      this.hue = isBot ? Math.floor(Math.random() * 360) : 190;
+      const sat = 45 + Math.floor(Math.random() * 10);   // 45~55% 
+      const lit = 45 + Math.floor(Math.random() * 15);   // 45~60%
+      this.colorStr = `hsl(${this.hue}, ${sat}%, ${lit}%)`;
+    }
+
+    this.blobSeeds = Array.from({length: 20}, () => (Math.random() - 0.5) * 2);
+    this.updateMass(mass);
+  }
+
+  updateMass(m) {
+    this.mass = Math.max(10, m);
+    this.r = 20 + Math.pow(this.mass, 0.45) * 2.2;
+  }
+
+  // 繪製有機不規則輪廓
+  _tracePath(r) {
+    const pts = 20;
+    ctx.beginPath();
+    for (let i = 0; i <= pts; i++) {
+      const a   = (i / pts) * Math.PI * 2;
+      const seed  = this.blobSeeds[i % this.blobSeeds.length];
+      const breathe = Math.sin(Date.now() * 0.0015 + seed * 3.14) * 0.018;
+      // 增加不規則的程度，使細胞看起來更有機
+      const wobble  = seed * 0.12 + breathe;
+      const rx = Math.cos(a) * r * (1 + wobble);
+      const ry = Math.sin(a) * r * (1 + wobble);
+      i === 0 ? ctx.moveTo(rx, ry) : ctx.lineTo(rx, ry);
+    }
+    ctx.closePath();
+  }
+
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // ── 本體（單一純色，移除高光與邊界）──
+    this._tracePath(this.r);
+    ctx.fillStyle = this.colorStr;
+    ctx.fill();
+
+    // ── 高清晰暱稱 ──
+    if (this.r > 20 && this.name) {
+      const fs = Math.max(14, this.r * 0.35); // 動態字型大小
+      ctx.font      = `900 ${fs}px Rajdhani, Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      // 粗純黑描邊
+      ctx.lineWidth   = fs * 0.25;
+      ctx.strokeStyle = '#000000';
+      ctx.lineJoin    = 'round';
+      ctx.strokeText(this.name, 0, 0);
+      
+      // 純白文字
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(this.name, 0, 0);
+    }
+    ctx.restore();
+  }
+}
+
+// =====================================================
+// 6. 遊戲啟動
+// =====================================================
+function startGame() {
+  const nameInput = document.getElementById('playerName').value.trim();
+  const name = nameInput || ('Cell_' + Math.floor(Math.random() * 999));
+
+  let saved = JSON.parse(localStorage.getItem('cellWorldNames') || '[]');
+  if (nameInput && !saved.includes(nameInput)) {
+    saved.unshift(nameInput);
+    localStorage.setItem('cellWorldNames', JSON.stringify(saved.slice(0, 5)));
+  }
+
+  db.ref('players/' + playerId).onDisconnect().remove();
+
+  document.getElementById('menu').style.display         = 'none';
+  document.getElementById('ui').style.display           = 'block';
+  document.getElementById('musicToggle').style.display  = 'block';
+  if (window.innerWidth > 768) {
+    document.getElementById('leaderboardContainer').style.display = 'block';
+  }
+  canvas.classList.add('playing');
+
+  if (!isMusicPlaying) toggleMusic();
+
+  entities = []; foods = []; ejectedPellets = []; playerCells = [];
+  peakMass = 0; powerupActive = false;
+
+  // ── 增加初始質量 ──
+  // 玩家初始質量調升到 1200，使其一開局就有更好的視覺體驗與操作容錯率
+  const p = new Cell(WORLD_SIZE / 2, WORLD_SIZE / 2, 1200, name, playerId, false);
+  playerCells.push(p);
+  entities.push(p);
+
+  camera.x = WORLD_SIZE / 2 - canvas.width  / 2 / 0.6;
+  camera.y = WORLD_SIZE / 2 - canvas.height / 2 / 0.6;
+  camera.scale = 0.6;
+
+  // 生成環境 AI：包含一般Bot、藻類、掠食者
+  for (let i = 0; i < MAX_BOTS; i++) spawnBot(i, i < 30);
+
+  // 生成食物
+  for (let i = 0; i < MAX_FOOD; i++) spawnFood();
+
+  startTime = Date.now();
+  gameRunning = true;
+  requestAnimationFrame(loop);
+}
+
+function spawnBot(i, nearPlayer = false) {
+  let x, y;
+  if (nearPlayer) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist  = 600 + Math.random() * 1900;
+    x = Math.max(50, Math.min(WORLD_SIZE - 50, WORLD_SIZE / 2 + Math.cos(angle) * dist));
+    y = Math.max(50, Math.min(WORLD_SIZE - 50, WORLD_SIZE / 2 + Math.sin(angle) * dist));
+  } else {
+    x = 50 + Math.random() * (WORLD_SIZE - 100);
+    y = 50 + Math.random() * (WORLD_SIZE - 100);
+  }
+
+  // 隨機決定生物生態域種類 (70% 普通, 20% 藻類, 10% 掠食者)
+  const randType = Math.random();
+  let type = 'normal';
+  let name = 'Bot_' + i;
+  let mass = 200 + Math.random() * 500; // 整體提昇Bot質量
+
+  if (randType > 0.9) {
+    type = 'predator';
+    name = 'Predator';
+    mass = 1500 + Math.random() * 1000;
+  } else if (randType > 0.7) {
+    type = 'algae';
+    name = ''; // 藻類不顯示名字
+    mass = 300 + Math.random() * 200;
+  }
+
+  entities.push(new Cell(x, y, mass, name, 'bot_' + i, true, type));
+}
+
+function spawnFood() {
+  foods.push({
+    x: Math.random() * WORLD_SIZE,
+    y: Math.random() * WORLD_SIZE,
+    r: 6,
+    color: `hsl(${Math.random() * 360}, 65%, 55%)`
+  });
+}
+
+// =====================================================
+// 7. 動作：分裂、餵食、加速技能
+// =====================================================
+function getWorldMouse() {
+  return {
+    x: mouseX / camera.scale + camera.x,
+    y: mouseY / camera.scale + camera.y
+  };
+}
+
+function executeSplit() {
+  const wm = getWorldMouse();
+  const newCells = [];
+  [...playerCells].forEach(c => {
+    if (c.mass < 100) return; // 提高分裂門檻
+    const angle = Math.atan2(wm.y - c.y, wm.x - c.x);
+    const half  = c.mass / 2;
+    c.updateMass(half);
+    c.mergeTimer = 210; 
+
+    const nc = new Cell(
+      c.x + Math.cos(angle) * c.r,
+      c.y + Math.sin(angle) * c.r,
+      half, c.name, c.id, false
+    );
+    nc.hue = c.hue; nc.colorStr = c.colorStr;
+    nc.splitVx = Math.cos(angle) * 18;
+    nc.splitVy = Math.sin(angle) * 18;
+    nc.mergeTimer = 210;
+    newCells.push(nc);
+  });
+  newCells.forEach(nc => { playerCells.push(nc); entities.push(nc); });
+}
+
+function executeEject() {
+  const wm = getWorldMouse();
+  playerCells.forEach(c => {
+    if (c.mass < 60) return;
+    const angle = Math.atan2(wm.y - c.y, wm.x - c.x);
+    c.updateMass(c.mass - 20);
+    ejectedPellets.push({
+      x: c.x + Math.cos(angle) * (c.r + 10),
+      y: c.y + Math.sin(angle) * (c.r + 10),
+      vx: Math.cos(angle) * 15,
+      vy: Math.sin(angle) * 15,
+      r: 8, mass: 18,
+      color: c.colorStr,
+      life: 80
+    });
+  });
+}
+
+function executePowerUp() {
+  if (powerupActive) return;
+  powerupActive  = true;
+  powerupEndTime = Date.now() + 3500;
+  const slot = document.getElementById('inventorySlot');
+  slot.innerText = '⚡ 加速中';
+  slot.classList.add('active');
+  setTimeout(() => {
+    powerupActive = false;
+    slot.innerText = '空';
+    slot.classList.remove('active');
+  }, 3500);
+}
+
+// =====================================================
+// 8. 更新邏輯
+// =====================================================
+let lastSyncTime = 0;
+
+function update() {
+  const wm = getWorldMouse();
+
+  if (playerCells.length === 0) { gameOver(); return; }
+
+  // ── 玩家細胞移動 ──
+  playerCells.forEach(c => {
+    c.x += c.splitVx; c.y += c.splitVy;
+    c.splitVx *= 0.80; c.splitVy *= 0.80;
+    if (Math.abs(c.splitVx) < 0.08) c.splitVx = 0;
+    if (Math.abs(c.splitVy) < 0.08) c.splitVy = 0;
+    if (c.mergeTimer > 0) c.mergeTimer--;
+
+    const dist  = Math.hypot(wm.x - c.x, wm.y - c.y);
+    let speed = 5.5 * Math.pow(100 / Math.max(c.mass, 1), 0.18);
+    if (powerupActive) speed *= 1.75;
+    if (dist > 8) {
+      const ang = Math.atan2(wm.y - c.y, wm.x - c.x);
+      c.x += Math.cos(ang) * speed;
+      c.y += Math.sin(ang) * speed;
+    }
+
+    // ── 強制邊界碰撞檢測修正 ──
+    c.x = Math.max(c.r, Math.min(WORLD_SIZE - c.r, c.x));
+    c.y = Math.max(c.r, Math.min(WORLD_SIZE - c.r, c.y));
+
+    peakMass = Math.max(peakMass, c.mass);
+  });
+
+  // 玩家細胞合併
+  for (let i = playerCells.length - 1; i >= 1; i--) {
+    for (let j = i - 1; j >= 0; j--) {
+      const a = playerCells[i], b = playerCells[j];
+      if (!a || !b) continue;
+      if (a.mergeTimer > 0 || b.mergeTimer > 0) continue;
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < (a.r + b.r) * 0.52) {
+        b.updateMass(b.mass + a.mass);
+        const eIdx = entities.indexOf(a);
+        if (eIdx > -1) entities.splice(eIdx, 1);
+        playerCells.splice(i, 1);
+        break;
+      }
+    }
+  }
+
+  // 攝影機
+  if (playerCells.length > 0) {
+    const totalMass = playerCells.reduce((s, c) => s + c.mass, 0);
+    const avgMass   = totalMass / playerCells.length;
+    const cenX = playerCells.reduce((s, c) => s + c.x, 0) / playerCells.length;
+    const cenY = playerCells.reduce((s, c) => s + c.y, 0) / playerCells.length;
+    camera.x += (cenX - canvas.width  / 2 / camera.scale - camera.x) * 0.1;
+    camera.y += (cenY - canvas.height / 2 / camera.scale - camera.y) * 0.1;
+    const tScale = Math.max(0.15, Math.min(0.85, 120 / Math.pow(Math.max(avgMass, 1), 0.38)));
+    camera.scale += (tScale - camera.scale) * 0.06;
+  }
+
+  // ── AI 行為 ──
+  entities.forEach(e => {
+    if (!e.isBot) return;
+
+    // 藻類不會移動
+    if (e.type === 'algae') {
+      return; 
+    }
+
+    e.targetChangeCd--;
+    if (e.targetChangeCd <= 0) {
+      e.targetChangeCd = 55 + Math.floor(Math.random() * 70);
+      let bestAngle = e.targetAngle + (Math.random() - 0.5) * 0.6;
+      let closestPreyDist = 900, closestThreatDist = 900;
+
+      entities.forEach(other => {
+        if (e === other) return;
+        const d = Math.hypot(e.x - other.x, e.y - other.y);
+        if (d > 900) return;
+
+        // 掠食者有著極強的進攻性
+        const attackMultiplier = e.type === 'predator' ? 1.05 : 1.2;
+
+        if (e.mass > other.mass * attackMultiplier && d < closestPreyDist) {
+          closestPreyDist = d;
+          bestAngle = Math.atan2(other.y - e.y, other.x - e.x);
+        } else if (other.mass > e.mass * 1.2 && d < closestThreatDist && e.type !== 'predator') {
+          // 掠食者幾乎不逃跑，只會往獵物衝
+          closestThreatDist = d;
+          bestAngle = Math.atan2(e.y - other.y, e.x - other.x);
+        }
+      });
+      e.targetAngle = bestAngle;
+    }
+    
+    // 掠食者移動速度較快
+    const speedMult = e.type === 'predator' ? 3.5 : 2.6;
+    const aiSpeed = speedMult * Math.pow(80 / Math.max(e.mass, 1), 0.14);
+    e.x += Math.cos(e.targetAngle) * aiSpeed;
+    e.y += Math.sin(e.targetAngle) * aiSpeed;
+    
+    // AI 邊界碰撞限制
+    e.x = Math.max(e.r, Math.min(WORLD_SIZE - e.r, e.x));
+    e.y = Math.max(e.r, Math.min(WORLD_SIZE - e.r, e.y));
+  });
+
+  // ── 吞噬判定 ──
+  for (let i = entities.length - 1; i >= 0; i--) {
+    const a = entities[i];
+    if (!a) continue;
+    for (let j = entities.length - 1; j >= 0; j--) {
+      if (i === j || !entities[i] || !entities[j]) continue;
+      const b = entities[j];
+
+      if (a.id === b.id) continue;
+
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < a.r * 0.82 && a.mass > b.mass * 1.15) {
+        a.updateMass(a.mass + b.mass * 0.78);
+        if (!b.isBot) {
+          playerCells = playerCells.filter(c => c !== b);
+        }
+        entities.splice(j, 1);
+        if (j < i) i--;
+      }
+    }
+
+    if (!entities[i]) continue;
+    for (let f = foods.length - 1; f >= 0; f--) {
+      if (Math.hypot(entities[i].x - foods[f].x, entities[i].y - foods[f].y) < entities[i].r) {
+        entities[i].updateMass(entities[i].mass + 1.5);
+        foods.splice(f, 1);
+        spawnFood();
+      }
+    }
+
+    for (let p = ejectedPellets.length - 1; p >= 0; p--) {
+      if (!ejectedPellets[p] || !entities[i]) continue;
+      const pel = ejectedPellets[p];
+      if (Math.hypot(entities[i].x - pel.x, entities[i].y - pel.y) < entities[i].r + pel.r) {
+        entities[i].updateMass(entities[i].mass + pel.mass);
+        ejectedPellets.splice(p, 1);
+      }
+    }
+  }
+
+  // ── 噴射食丸物理及邊界限制 ──
+  for (let p = ejectedPellets.length - 1; p >= 0; p--) {
+    const pel = ejectedPellets[p];
+    pel.x += pel.vx; pel.y += pel.vy;
+    pel.vx *= 0.86; pel.vy *= 0.86;
+    
+    // 防掉出邊界
+    pel.x = Math.max(pel.r, Math.min(WORLD_SIZE - pel.r, pel.x));
+    pel.y = Math.max(pel.r, Math.min(WORLD_SIZE - pel.r, pel.y));
+
+    pel.life--;
+    if (pel.life <= 0) ejectedPellets.splice(p, 1);
+  }
+
+  const botCount = entities.filter(e => e.isBot).length;
+  if (botCount < MAX_BOTS) spawnBot(botCount);
+
+  const totalMass = playerCells.reduce((s, c) => s + Math.floor(c.mass), 0);
+  document.getElementById('massDisplay').innerText = totalMass;
+
+  updateLocalLeaderboard();
+
+  const now = Date.now();
+  if (now - lastSyncTime > 3000 && playerCells.length > 0) {
+    lastSyncTime = now;
+    syncMyData();
+  }
+}
+
+function updateLocalLeaderboard() {
+  const myName = playerCells[0]?.name;
+  const top = [...entities].sort((a, b) => b.mass - a.mass).slice(0, 8);
+  document.getElementById('local-lb-content').innerHTML = top.map((e, i) =>
+    `<div class="lb-entry ${e.name === myName ? 'me' : ''}">
+       <span><span class="lb-rank">${i + 1}.</span> ${e.name || 'Unknown'}</span>
+       <span>${Math.floor(e.mass)}</span>
+     </div>`
+  ).join('');
+}
+
+// =====================================================
+// 9. 繪圖
+// =====================================================
+function draw() {
+  ctx.fillStyle = '#060810';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  ctx.scale(camera.scale, camera.scale);
+  ctx.translate(-camera.x, -camera.y);
+
+  ctx.strokeStyle = '#0d1220'; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let i = 0; i <= WORLD_SIZE; i += 100) {
+    ctx.moveTo(i, 0); ctx.lineTo(i, WORLD_SIZE);
+    ctx.moveTo(0, i); ctx.lineTo(WORLD_SIZE, i);
+  }
+  ctx.stroke();
+
+  // 世界實體邊界，加上明顯發光
+  ctx.strokeStyle = '#1a3a2a'; 
+  ctx.lineWidth = 10;
+  ctx.strokeRect(0, 0, WORLD_SIZE, WORLD_SIZE);
+
+  foods.forEach(f => {
+    ctx.fillStyle = f.color;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ejectedPellets.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = p.life / 80;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+
+  for (const id in remotePlayers) {
+    if (id === playerId) continue;
+    const rp = remotePlayers[id];
+    if (Date.now() - rp.lastUpdate > 5000) continue;
+    const r = 15 + Math.pow(rp.mass, 0.45) * 2;
+    ctx.save();
+    ctx.translate(rp.x, rp.y);
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = rp.color;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'white'; ctx.textAlign = 'center';
+    ctx.font = `bold ${Math.max(11, r * 0.32)}px Rajdhani, Arial`;
+    ctx.fillText(rp.name, 0, r * 0.1);
+    ctx.restore();
+  }
+
+  // 先畫小的、再畫大的，避免小細胞被完全遮擋
+  [...entities].sort((a, b) => a.mass - b.mass).forEach(e => e.draw());
+
+  ctx.restore();
+}
+
+// =====================================================
+// 10. Firebase 同步
+// =====================================================
+function syncMyData() {
+  if (playerCells.length === 0) return;
+  const main = [...playerCells].sort((a, b) => b.mass - a.mass)[0];
+  const totalMass = playerCells.reduce((s, c) => s + Math.floor(c.mass), 0);
+  db.ref('players/' + playerId).set({
+    name: main.name, x: Math.floor(main.x), y: Math.floor(main.y),
+    mass: totalMass, color: main.colorStr, lastUpdate: Date.now()
+  });
+  db.ref('leaderboard/' + playerId).set({ name: main.name, score: totalMass });
+}
+
+db.ref('leaderboard').orderByChild('score').limitToLast(10).on('value', snap => {
+  const list = [];
+  snap.forEach(child => list.push(child.val()));
+  list.reverse();
+  document.getElementById('global-lb-content').innerHTML = list.map((v, i) =>
+    `<div class="lb-entry"><span><span class="lb-rank">${i + 1}.</span> ${v.name}</span><span>${v.score}</span></div>`
+  ).join('');
+});
+
+db.ref('players').on('value', snap => { remotePlayers = snap.val() || {}; });
+
+// =====================================================
+// 11. 結算
+// =====================================================
+function gameOver() {
+  if (!gameRunning) return;
+  gameRunning = false;
+  canvas.classList.remove('playing');
+  bgm.pause(); isMusicPlaying = false;
+  db.ref('players/' + playerId).remove();
+
+  const dur = Math.floor((Date.now() - startTime) / 1000);
+  document.getElementById('resMass').innerText = Math.floor(peakMass);
+  document.getElementById('resTime').innerText = dur + 's';
+  document.getElementById('deathScreen').style.display = 'flex';
+
+  db.ref('leaderboard').orderByChild('score').once('value', snap => {
+    const count = snap.numChildren();
+    let rank = count;
+    snap.forEach(c => { if (c.val().score <= Math.floor(peakMass)) rank--; });
+    document.getElementById('globalRankText').innerText =
+      `全球排名：第 ${rank + 1} 名（共 ${count} 位玩家）`;
+  });
+}
+
+// =====================================================
+// 12. 主循環 & 視窗縮放
+// =====================================================
+function loop() {
+  if (!gameRunning) return;
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', () => {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
+</script>
+</body>
+</html>
