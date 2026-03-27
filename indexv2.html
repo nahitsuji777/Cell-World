@@ -329,7 +329,7 @@ const db = firebase.database();
 // =====================================================
 // 2. 音樂系統
 // =====================================================
-const bgm = new Audio('bgm.mp3');
+const bgm = new Audio('https://youtu.be/5cyNBi2TVyM?si=k0i_TAdZPTsKXnX-');
 bgm.loop = true; bgm.volume = 0.4;
 let isMusicPlaying = false;
 
@@ -424,8 +424,15 @@ class Cell {
     this.targetChangeCd = 0;
     this.targetAngle = Math.random() * Math.PI * 2;
 
-    this.hue = isBot ? Math.floor(Math.random() * 360) : 150;
-    this.colorStr = `hsl(${this.hue}, 80%, 52%)`;
+    // 柔和色調：飽和度 50-65%，亮度 38-50%，避免螢光色
+    this.hue = isBot ? Math.floor(Math.random() * 360) : 148;
+    const sat = 50 + Math.floor(Math.random() * 15);   // 50~65%
+    const lit = 38 + Math.floor(Math.random() * 12);   // 38~50%
+    this.colorStr = `hsl(${this.hue}, ${sat}%, ${lit}%)`;
+    // 深色邊框（同色系深 20%）
+    this.borderStr = `hsl(${this.hue}, ${sat}%, ${Math.max(10, lit - 18)}%)`;
+    // 每個細胞固定的形狀偏移種子（讓形狀不一樣但不亂抖）
+    this.blobSeeds = Array.from({length: 20}, () => (Math.random() - 0.5) * 2);
     this.updateMass(mass);
   }
 
@@ -434,56 +441,61 @@ class Cell {
     this.r = 20 + Math.pow(this.mass, 0.45) * 2.2;
   }
 
+  // 繪製有機不規則輪廓
+  _tracePath(r) {
+    const pts = 20;
+    ctx.beginPath();
+    for (let i = 0; i <= pts; i++) {
+      const a   = (i / pts) * Math.PI * 2;
+      // 固定種子造成不規則，細微隨時間呼吸
+      const seed  = this.blobSeeds[i % this.blobSeeds.length];
+      const breathe = Math.sin(Date.now() * 0.0015 + seed * 3.14) * 0.018;
+      const wobble  = seed * 0.09 + breathe;
+      const rx = Math.cos(a) * r * (1 + wobble);
+      const ry = Math.sin(a) * r * (1 + wobble);
+      i === 0 ? ctx.moveTo(rx, ry) : ctx.lineTo(rx, ry);
+    }
+    ctx.closePath();
+  }
+
   draw() {
     ctx.save();
     ctx.translate(this.x, this.y);
 
-    // 果凍漸層
-    const grad = ctx.createRadialGradient(0, 0, this.r * 0.08, 0, 0, this.r);
-    grad.addColorStop(0,    '#ffffff');
-    grad.addColorStop(0.22, this.colorStr);
-    grad.addColorStop(1,    '#000000');
-    ctx.fillStyle = grad;
-
-    // 波動輪廓
-    const pts = 18, t = Date.now() * 0.005;
-    ctx.beginPath();
-    for (let i = 0; i <= pts; i++) {
-      const a = (i / pts) * Math.PI * 2;
-      const w = Math.sin(a * 5 + t) * (this.r * 0.03);
-      const px = Math.cos(a) * (this.r + w);
-      const py = Math.sin(a) * (this.r + w);
-      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-    }
-    ctx.closePath();
+    // ── 本體（單色平塗）──
+    this._tracePath(this.r);
+    ctx.fillStyle = this.colorStr;
     ctx.fill();
 
-    // 內側光澤
-    const shine = ctx.createRadialGradient(-this.r * 0.3, -this.r * 0.3, 0, 0, 0, this.r * 0.7);
-    shine.addColorStop(0,   'rgba(255,255,255,0.25)');
-    shine.addColorStop(0.5, 'rgba(255,255,255,0.06)');
-    shine.addColorStop(1,   'transparent');
-    ctx.fillStyle = shine;
-    ctx.beginPath();
-    for (let i = 0; i <= pts; i++) {
-      const a = (i / pts) * Math.PI * 2;
-      const w = Math.sin(a * 5 + t) * (this.r * 0.03);
-      const px = Math.cos(a) * (this.r + w);
-      const py = Math.sin(a) * (this.r + w);
-      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-    ctx.fill();
+    // ── 細胞膜（深色邊框）──
+    ctx.strokeStyle = this.borderStr;
+    ctx.lineWidth   = Math.max(2, this.r * 0.055);
+    ctx.stroke();
 
-    // 名稱文字
-    if (this.r > 22) {
-      ctx.fillStyle = 'white';
+    // ── 極淡高光（左上角小橢圓，增加立體感但不搶眼）──
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.beginPath();
+    ctx.ellipse(-this.r * 0.28, -this.r * 0.28, this.r * 0.32, this.r * 0.18, -0.6, 0, Math.PI * 2);
+    ctx.fillStyle = 'white';
+    ctx.fill();
+    ctx.restore();
+
+    // ── 暱稱：白字 + 黑色描邊，確保任何顏色底板都看得清楚 ──
+    if (this.r > 20) {
+      const fs = Math.max(12, this.r * 0.42);
+      ctx.font      = `bold ${fs}px Rajdhani, Arial`;
       ctx.textAlign = 'center';
-      ctx.font = `bold ${Math.max(11, this.r * 0.38)}px Rajdhani, Arial`;
-      ctx.shadowColor = 'rgba(0,0,0,0.6)';
-      ctx.shadowBlur = 4;
-      ctx.fillText(this.name, 0, this.r * 0.13);
-      ctx.shadowBlur = 0;
+      ctx.textBaseline = 'middle';
+      // 黑色描邊
+      ctx.lineWidth   = fs * 0.22;
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      ctx.lineJoin    = 'round';
+      ctx.strokeText(this.name, 0, 0);
+      // 白色文字
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillText(this.name, 0, 0);
+      ctx.textBaseline = 'alphabetic';
     }
     ctx.restore();
   }
@@ -522,13 +534,18 @@ function startGame() {
   entities = []; foods = []; ejectedPellets = []; playerCells = [];
   peakMass = 0; powerupActive = false;
 
-  // 建立玩家
-  const p = new Cell(WORLD_SIZE / 2, WORLD_SIZE / 2, 60, name, playerId, false);
+  // 建立玩家（起始 mass 250，確保畫面上看得清楚）
+  const p = new Cell(WORLD_SIZE / 2, WORLD_SIZE / 2, 250, name, playerId, false);
   playerCells.push(p);
   entities.push(p);
 
-  // 生成 AI
-  for (let i = 0; i < MAX_BOTS; i++) spawnBot(i);
+  // 攝影機先設定到玩家位置並以較低縮放開始（讓玩家一開始就能看到周圍）
+  camera.x = WORLD_SIZE / 2 - canvas.width  / 2 / 0.6;
+  camera.y = WORLD_SIZE / 2 - canvas.height / 2 / 0.6;
+  camera.scale = 0.6;
+
+  // 生成 AI：前 30 隻在玩家附近（600~2500 單位內），其餘散佈全圖
+  for (let i = 0; i < MAX_BOTS; i++) spawnBot(i, i < 30);
 
   // 生成食物
   for (let i = 0; i < MAX_FOOD; i++) spawnFood();
@@ -538,15 +555,21 @@ function startGame() {
   requestAnimationFrame(loop);
 }
 
-function spawnBot(i) {
-  entities.push(new Cell(
-    50 + Math.random() * (WORLD_SIZE - 100),
-    50 + Math.random() * (WORLD_SIZE - 100),
-    30 + Math.random() * 250,
-    'Bot_' + i,
-    'bot_' + i,
-    true
-  ));
+function spawnBot(i, nearPlayer = false) {
+  let x, y;
+  if (nearPlayer) {
+    // 在玩家周圍 600~2500 單位的環狀區域生成
+    const angle = Math.random() * Math.PI * 2;
+    const dist  = 600 + Math.random() * 1900;
+    x = Math.max(50, Math.min(WORLD_SIZE - 50, WORLD_SIZE / 2 + Math.cos(angle) * dist));
+    y = Math.max(50, Math.min(WORLD_SIZE - 50, WORLD_SIZE / 2 + Math.sin(angle) * dist));
+  } else {
+    x = 50 + Math.random() * (WORLD_SIZE - 100);
+    y = 50 + Math.random() * (WORLD_SIZE - 100);
+  }
+  // 質量範圍縮小：避免初始質量差距太大導致小Bot立刻被吃掉
+  const mass = 50 + Math.random() * 180;
+  entities.push(new Cell(x, y, mass, 'Bot_' + i, 'bot_' + i, true));
 }
 
 function spawnFood() {
@@ -686,7 +709,7 @@ function update() {
     const cenY = playerCells.reduce((s, c) => s + c.y, 0) / playerCells.length;
     camera.x += (cenX - canvas.width  / 2 / camera.scale - camera.x) * 0.1;
     camera.y += (cenY - canvas.height / 2 / camera.scale - camera.y) * 0.1;
-    const tScale = Math.max(0.22, Math.min(1.1, 80 / Math.pow(Math.max(avgMass, 1), 0.33)));
+    const tScale = Math.max(0.15, Math.min(0.85, 120 / Math.pow(Math.max(avgMass, 1), 0.38)));
     camera.scale += (tScale - camera.scale) * 0.06;
   }
 
