@@ -7,7 +7,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;600;700;900&display=swap');
 
   :root {
     --primary: #00ff88;
@@ -246,7 +246,6 @@
 </head>
 <body>
 
-<!-- ── 開始選單 ── -->
 <div id="menu">
   <p class="menu-logo">CELL WORLD</p>
   <p class="menu-sub">Global Evolution</p>
@@ -262,23 +261,19 @@
   <button class="start-btn" onclick="startGame()">▶ 進入全球演化</button>
 </div>
 
-<!-- ── 音樂按鈕 ── -->
 <button id="musicToggle" onclick="toggleMusic()">♪ 音樂：關</button>
 
-<!-- ── 遊戲內 HUD ── -->
 <div id="ui">
   <div class="mass-display">質量：<span id="massDisplay">0</span></div>
   <div>武裝：<span id="inventorySlot" class="inventory-slot">空</span></div>
 </div>
 
-<!-- ── 手機虛擬按鍵 ── -->
 <div id="mobile-controls">
   <div class="mob-btn" ontouchstart="executeEject()">餵食<br>W</div>
   <div class="mob-btn" ontouchstart="executeSplit()">分裂<br>空白</div>
   <div class="mob-btn skill" ontouchstart="executePowerUp()">技能<br>E</div>
 </div>
 
-<!-- ── 排行榜 ── -->
 <div id="leaderboardContainer">
   <div class="lb-box">
     <div class="lb-header">📍 區域戰況</div>
@@ -290,7 +285,6 @@
   </div>
 </div>
 
-<!-- ── 結算畫面 ── -->
 <div id="deathScreen">
   <h2>演化中斷</h2>
   <p class="death-sub">YOUR CELLS HAVE BEEN CONSUMED</p>
@@ -329,7 +323,9 @@ const db = firebase.database();
 // =====================================================
 // 2. 音樂系統
 // =====================================================
-const bgm = new Audio('https://youtu.be/5cyNBi2TVyM?si=k0i_TAdZPTsKXnX-');
+// 修正：更換為可以直接讀取的環境音樂網址 (MP3/OGG)
+// 若要使用自訂音樂，請確保連結結尾為 .mp3 等音源檔格式
+const bgm = new Audio('https://freemusicarchive.org/track/ambient-space/download'); 
 bgm.loop = true; bgm.volume = 0.4;
 let isMusicPlaying = false;
 
@@ -357,10 +353,10 @@ const WORLD_SIZE = 8000;
 const MAX_BOTS   = 60;
 const MAX_FOOD   = 2000;
 
-let entities       = [];   // 所有 Cell 物件（玩家 + AI）
+let entities       = [];   // 所有 Cell 物件（玩家 + AI + 生態域生物）
 let foods          = [];   // 食物點
 let ejectedPellets = [];   // 玩家噴出的食丸
-let playerCells    = [];   // 玩家控制的所有細胞（分裂後多個）
+let playerCells    = [];   // 玩家控制的所有細胞
 let remotePlayers  = {};   // Firebase 遠端玩家快照
 
 let gameRunning = false;
@@ -373,7 +369,6 @@ let mouseX = canvas.width  / 2;
 let mouseY = canvas.height / 2;
 let camera = { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2, scale: 1 };
 
-// 每個連線 session 的唯一 ID
 const playerId = 'p_' + Math.random().toString(36).substr(2, 9);
 
 // =====================================================
@@ -398,7 +393,6 @@ document.addEventListener('keydown', e => {
   if (e.code === 'KeyE')   executePowerUp();
 });
 
-// ── 載入暱稱歷史 ──
 (function loadSavedNames() {
   const saved = JSON.parse(localStorage.getItem('cellWorldNames') || '[]');
   const dl = document.getElementById('savedNameList');
@@ -412,26 +406,29 @@ document.addEventListener('keydown', e => {
 // 5. Cell 類別（含美術、物理）
 // =====================================================
 class Cell {
-  constructor(x, y, mass, name, id, isBot = true) {
+  constructor(x, y, mass, name, id, isBot = true, type = 'normal') {
     this.x = x; this.y = y;
     this.id = id; this.name = name; this.isBot = isBot;
+    this.type = type; // normal, algae, predator
 
-    // 分裂衝刺速度
     this.splitVx = 0; this.splitVy = 0;
-    // 合併冷卻（> 0 時禁止與同 id 細胞合併）
     this.mergeTimer = 0;
-    // AI 方向選取冷卻
     this.targetChangeCd = 0;
     this.targetAngle = Math.random() * Math.PI * 2;
 
-    // 柔和色調：飽和度 50-65%，亮度 38-50%，避免螢光色
-    this.hue = isBot ? Math.floor(Math.random() * 360) : 148;
-    const sat = 50 + Math.floor(Math.random() * 15);   // 50~65%
-    const lit = 38 + Math.floor(Math.random() * 12);   // 38~50%
-    this.colorStr = `hsl(${this.hue}, ${sat}%, ${lit}%)`;
-    // 深色邊框（同色系深 20%）
-    this.borderStr = `hsl(${this.hue}, ${sat}%, ${Math.max(10, lit - 18)}%)`;
-    // 每個細胞固定的形狀偏移種子（讓形狀不一樣但不亂抖）
+    // ── 美術優化：不規則、單一純色（不會刺眼） ──
+    if (this.type === 'algae') {
+      this.colorStr = '#2e8b57'; // 浮游藻類為偏暗的海藻綠
+    } else if (this.type === 'predator') {
+      this.colorStr = '#b03040'; // 掠食者為暗紅色
+    } else {
+      // 降低飽和度與亮度，避免螢光色
+      this.hue = isBot ? Math.floor(Math.random() * 360) : 190;
+      const sat = 45 + Math.floor(Math.random() * 10);   // 45~55% 
+      const lit = 45 + Math.floor(Math.random() * 15);   // 45~60%
+      this.colorStr = `hsl(${this.hue}, ${sat}%, ${lit}%)`;
+    }
+
     this.blobSeeds = Array.from({length: 20}, () => (Math.random() - 0.5) * 2);
     this.updateMass(mass);
   }
@@ -447,10 +444,10 @@ class Cell {
     ctx.beginPath();
     for (let i = 0; i <= pts; i++) {
       const a   = (i / pts) * Math.PI * 2;
-      // 固定種子造成不規則，細微隨時間呼吸
       const seed  = this.blobSeeds[i % this.blobSeeds.length];
       const breathe = Math.sin(Date.now() * 0.0015 + seed * 3.14) * 0.018;
-      const wobble  = seed * 0.09 + breathe;
+      // 增加不規則的程度，使細胞看起來更有機
+      const wobble  = seed * 0.12 + breathe;
       const rx = Math.cos(a) * r * (1 + wobble);
       const ry = Math.sin(a) * r * (1 + wobble);
       i === 0 ? ctx.moveTo(rx, ry) : ctx.lineTo(rx, ry);
@@ -462,40 +459,27 @@ class Cell {
     ctx.save();
     ctx.translate(this.x, this.y);
 
-    // ── 本體（單色平塗）──
+    // ── 本體（單一純色，移除高光與邊界）──
     this._tracePath(this.r);
     ctx.fillStyle = this.colorStr;
     ctx.fill();
 
-    // ── 細胞膜（深色邊框）──
-    ctx.strokeStyle = this.borderStr;
-    ctx.lineWidth   = Math.max(2, this.r * 0.055);
-    ctx.stroke();
-
-    // ── 極淡高光（左上角小橢圓，增加立體感但不搶眼）──
-    ctx.save();
-    ctx.globalAlpha = 0.18;
-    ctx.beginPath();
-    ctx.ellipse(-this.r * 0.28, -this.r * 0.28, this.r * 0.32, this.r * 0.18, -0.6, 0, Math.PI * 2);
-    ctx.fillStyle = 'white';
-    ctx.fill();
-    ctx.restore();
-
-    // ── 暱稱：白字 + 黑色描邊，確保任何顏色底板都看得清楚 ──
-    if (this.r > 20) {
-      const fs = Math.max(12, this.r * 0.42);
-      ctx.font      = `bold ${fs}px Rajdhani, Arial`;
+    // ── 高清晰暱稱 ──
+    if (this.r > 20 && this.name) {
+      const fs = Math.max(14, this.r * 0.35); // 動態字型大小
+      ctx.font      = `900 ${fs}px Rajdhani, Arial`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      // 黑色描邊
-      ctx.lineWidth   = fs * 0.22;
-      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      
+      // 粗純黑描邊
+      ctx.lineWidth   = fs * 0.25;
+      ctx.strokeStyle = '#000000';
       ctx.lineJoin    = 'round';
       ctx.strokeText(this.name, 0, 0);
-      // 白色文字
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      
+      // 純白文字
+      ctx.fillStyle = '#FFFFFF';
       ctx.fillText(this.name, 0, 0);
-      ctx.textBaseline = 'alphabetic';
     }
     ctx.restore();
   }
@@ -508,17 +492,14 @@ function startGame() {
   const nameInput = document.getElementById('playerName').value.trim();
   const name = nameInput || ('Cell_' + Math.floor(Math.random() * 999));
 
-  // 儲存暱稱（最多 5 筆）
   let saved = JSON.parse(localStorage.getItem('cellWorldNames') || '[]');
   if (nameInput && !saved.includes(nameInput)) {
     saved.unshift(nameInput);
     localStorage.setItem('cellWorldNames', JSON.stringify(saved.slice(0, 5)));
   }
 
-  // Firebase 離線自動清理
   db.ref('players/' + playerId).onDisconnect().remove();
 
-  // 顯示 UI
   document.getElementById('menu').style.display         = 'none';
   document.getElementById('ui').style.display           = 'block';
   document.getElementById('musicToggle').style.display  = 'block';
@@ -527,24 +508,22 @@ function startGame() {
   }
   canvas.classList.add('playing');
 
-  // 嘗試啟動音樂
   if (!isMusicPlaying) toggleMusic();
 
-  // 重置狀態
   entities = []; foods = []; ejectedPellets = []; playerCells = [];
   peakMass = 0; powerupActive = false;
 
-  // 建立玩家（起始 mass 250，確保畫面上看得清楚）
-  const p = new Cell(WORLD_SIZE / 2, WORLD_SIZE / 2, 250, name, playerId, false);
+  // ── 增加初始質量 ──
+  // 玩家初始質量調升到 1200，使其一開局就有更好的視覺體驗與操作容錯率
+  const p = new Cell(WORLD_SIZE / 2, WORLD_SIZE / 2, 1200, name, playerId, false);
   playerCells.push(p);
   entities.push(p);
 
-  // 攝影機先設定到玩家位置並以較低縮放開始（讓玩家一開始就能看到周圍）
   camera.x = WORLD_SIZE / 2 - canvas.width  / 2 / 0.6;
   camera.y = WORLD_SIZE / 2 - canvas.height / 2 / 0.6;
   camera.scale = 0.6;
 
-  // 生成 AI：前 30 隻在玩家附近（600~2500 單位內），其餘散佈全圖
+  // 生成環境 AI：包含一般Bot、藻類、掠食者
   for (let i = 0; i < MAX_BOTS; i++) spawnBot(i, i < 30);
 
   // 生成食物
@@ -558,7 +537,6 @@ function startGame() {
 function spawnBot(i, nearPlayer = false) {
   let x, y;
   if (nearPlayer) {
-    // 在玩家周圍 600~2500 單位的環狀區域生成
     const angle = Math.random() * Math.PI * 2;
     const dist  = 600 + Math.random() * 1900;
     x = Math.max(50, Math.min(WORLD_SIZE - 50, WORLD_SIZE / 2 + Math.cos(angle) * dist));
@@ -567,17 +545,32 @@ function spawnBot(i, nearPlayer = false) {
     x = 50 + Math.random() * (WORLD_SIZE - 100);
     y = 50 + Math.random() * (WORLD_SIZE - 100);
   }
-  // 質量範圍縮小：避免初始質量差距太大導致小Bot立刻被吃掉
-  const mass = 50 + Math.random() * 180;
-  entities.push(new Cell(x, y, mass, 'Bot_' + i, 'bot_' + i, true));
+
+  // 隨機決定生物生態域種類 (70% 普通, 20% 藻類, 10% 掠食者)
+  const randType = Math.random();
+  let type = 'normal';
+  let name = 'Bot_' + i;
+  let mass = 200 + Math.random() * 500; // 整體提昇Bot質量
+
+  if (randType > 0.9) {
+    type = 'predator';
+    name = 'Predator';
+    mass = 1500 + Math.random() * 1000;
+  } else if (randType > 0.7) {
+    type = 'algae';
+    name = ''; // 藻類不顯示名字
+    mass = 300 + Math.random() * 200;
+  }
+
+  entities.push(new Cell(x, y, mass, name, 'bot_' + i, true, type));
 }
 
 function spawnFood() {
   foods.push({
     x: Math.random() * WORLD_SIZE,
     y: Math.random() * WORLD_SIZE,
-    r: 5,
-    color: `hsl(${Math.random() * 360}, 72%, 60%)`
+    r: 6,
+    color: `hsl(${Math.random() * 360}, 65%, 55%)`
   });
 }
 
@@ -595,11 +588,11 @@ function executeSplit() {
   const wm = getWorldMouse();
   const newCells = [];
   [...playerCells].forEach(c => {
-    if (c.mass < 42) return;
+    if (c.mass < 100) return; // 提高分裂門檻
     const angle = Math.atan2(wm.y - c.y, wm.x - c.x);
     const half  = c.mass / 2;
     c.updateMass(half);
-    c.mergeTimer = 210;                          // ~3.5 秒禁止合併
+    c.mergeTimer = 210; 
 
     const nc = new Cell(
       c.x + Math.cos(angle) * c.r,
@@ -618,15 +611,15 @@ function executeSplit() {
 function executeEject() {
   const wm = getWorldMouse();
   playerCells.forEach(c => {
-    if (c.mass < 30) return;
+    if (c.mass < 60) return;
     const angle = Math.atan2(wm.y - c.y, wm.x - c.x);
-    c.updateMass(c.mass - 13);
+    c.updateMass(c.mass - 20);
     ejectedPellets.push({
       x: c.x + Math.cos(angle) * (c.r + 10),
       y: c.y + Math.sin(angle) * (c.r + 10),
       vx: Math.cos(angle) * 15,
       vy: Math.sin(angle) * 15,
-      r: 8, mass: 11,
+      r: 8, mass: 18,
       color: c.colorStr,
       life: 80
     });
@@ -655,19 +648,16 @@ let lastSyncTime = 0;
 function update() {
   const wm = getWorldMouse();
 
-  // ── 玩家消亡判斷 ──
   if (playerCells.length === 0) { gameOver(); return; }
 
   // ── 玩家細胞移動 ──
   playerCells.forEach(c => {
-    // 分裂後衝刺衰減
     c.x += c.splitVx; c.y += c.splitVy;
     c.splitVx *= 0.80; c.splitVy *= 0.80;
     if (Math.abs(c.splitVx) < 0.08) c.splitVx = 0;
     if (Math.abs(c.splitVy) < 0.08) c.splitVy = 0;
     if (c.mergeTimer > 0) c.mergeTimer--;
 
-    // 滑鼠追蹤
     const dist  = Math.hypot(wm.x - c.x, wm.y - c.y);
     let speed = 5.5 * Math.pow(100 / Math.max(c.mass, 1), 0.18);
     if (powerupActive) speed *= 1.75;
@@ -677,14 +667,14 @@ function update() {
       c.y += Math.sin(ang) * speed;
     }
 
-    // 世界邊界夾縮
+    // ── 強制邊界碰撞檢測修正 ──
     c.x = Math.max(c.r, Math.min(WORLD_SIZE - c.r, c.x));
     c.y = Math.max(c.r, Math.min(WORLD_SIZE - c.r, c.y));
 
     peakMass = Math.max(peakMass, c.mass);
   });
 
-  // ── 玩家細胞合併（同 ID + 冷卻結束 + 重疊）──
+  // 玩家細胞合併
   for (let i = playerCells.length - 1; i >= 1; i--) {
     for (let j = i - 1; j >= 0; j--) {
       const a = playerCells[i], b = playerCells[j];
@@ -701,7 +691,7 @@ function update() {
     }
   }
 
-  // ── 攝影機 ──
+  // 攝影機
   if (playerCells.length > 0) {
     const totalMass = playerCells.reduce((s, c) => s + c.mass, 0);
     const avgMass   = totalMass / playerCells.length;
@@ -713,9 +703,15 @@ function update() {
     camera.scale += (tScale - camera.scale) * 0.06;
   }
 
-  // ── AI 行為（追逐食物 / 逃跑）──
+  // ── AI 行為 ──
   entities.forEach(e => {
     if (!e.isBot) return;
+
+    // 藻類不會移動
+    if (e.type === 'algae') {
+      return; 
+    }
+
     e.targetChangeCd--;
     if (e.targetChangeCd <= 0) {
       e.targetChangeCd = 55 + Math.floor(Math.random() * 70);
@@ -726,24 +722,34 @@ function update() {
         if (e === other) return;
         const d = Math.hypot(e.x - other.x, e.y - other.y);
         if (d > 900) return;
-        if (e.mass > other.mass * 1.2 && d < closestPreyDist) {
+
+        // 掠食者有著極強的進攻性
+        const attackMultiplier = e.type === 'predator' ? 1.05 : 1.2;
+
+        if (e.mass > other.mass * attackMultiplier && d < closestPreyDist) {
           closestPreyDist = d;
           bestAngle = Math.atan2(other.y - e.y, other.x - e.x);
-        } else if (other.mass > e.mass * 1.2 && d < closestThreatDist) {
+        } else if (other.mass > e.mass * 1.2 && d < closestThreatDist && e.type !== 'predator') {
+          // 掠食者幾乎不逃跑，只會往獵物衝
           closestThreatDist = d;
           bestAngle = Math.atan2(e.y - other.y, e.x - other.x);
         }
       });
       e.targetAngle = bestAngle;
     }
-    const aiSpeed = 2.6 * Math.pow(80 / Math.max(e.mass, 1), 0.14);
+    
+    // 掠食者移動速度較快
+    const speedMult = e.type === 'predator' ? 3.5 : 2.6;
+    const aiSpeed = speedMult * Math.pow(80 / Math.max(e.mass, 1), 0.14);
     e.x += Math.cos(e.targetAngle) * aiSpeed;
     e.y += Math.sin(e.targetAngle) * aiSpeed;
+    
+    // AI 邊界碰撞限制
     e.x = Math.max(e.r, Math.min(WORLD_SIZE - e.r, e.x));
     e.y = Math.max(e.r, Math.min(WORLD_SIZE - e.r, e.y));
   });
 
-  // ── 吞噬判定（細胞 vs 細胞）──
+  // ── 吞噬判定 ──
   for (let i = entities.length - 1; i >= 0; i--) {
     const a = entities[i];
     if (!a) continue;
@@ -751,7 +757,6 @@ function update() {
       if (i === j || !entities[i] || !entities[j]) continue;
       const b = entities[j];
 
-      // 同一玩家（同 ID）的分裂細胞不互吃
       if (a.id === b.id) continue;
 
       const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -765,7 +770,6 @@ function update() {
       }
     }
 
-    // 吃食物
     if (!entities[i]) continue;
     for (let f = foods.length - 1; f >= 0; f--) {
       if (Math.hypot(entities[i].x - foods[f].x, entities[i].y - foods[f].y) < entities[i].r) {
@@ -775,7 +779,6 @@ function update() {
       }
     }
 
-    // 吃噴射食丸
     for (let p = ejectedPellets.length - 1; p >= 0; p--) {
       if (!ejectedPellets[p] || !entities[i]) continue;
       const pel = ejectedPellets[p];
@@ -786,27 +789,28 @@ function update() {
     }
   }
 
-  // ── 噴射食丸物理 ──
+  // ── 噴射食丸物理及邊界限制 ──
   for (let p = ejectedPellets.length - 1; p >= 0; p--) {
     const pel = ejectedPellets[p];
     pel.x += pel.vx; pel.y += pel.vy;
     pel.vx *= 0.86; pel.vy *= 0.86;
+    
+    // 防掉出邊界
+    pel.x = Math.max(pel.r, Math.min(WORLD_SIZE - pel.r, pel.x));
+    pel.y = Math.max(pel.r, Math.min(WORLD_SIZE - pel.r, pel.y));
+
     pel.life--;
     if (pel.life <= 0) ejectedPellets.splice(p, 1);
   }
 
-  // ── 補充 AI 數量 ──
   const botCount = entities.filter(e => e.isBot).length;
   if (botCount < MAX_BOTS) spawnBot(botCount);
 
-  // ── HUD 質量 ──
   const totalMass = playerCells.reduce((s, c) => s + Math.floor(c.mass), 0);
   document.getElementById('massDisplay').innerText = totalMass;
 
-  // ── 本地排行榜 ──
   updateLocalLeaderboard();
 
-  // ── Firebase 同步（每 3 秒）──
   const now = Date.now();
   if (now - lastSyncTime > 3000 && playerCells.length > 0) {
     lastSyncTime = now;
@@ -819,7 +823,7 @@ function updateLocalLeaderboard() {
   const top = [...entities].sort((a, b) => b.mass - a.mass).slice(0, 8);
   document.getElementById('local-lb-content').innerHTML = top.map((e, i) =>
     `<div class="lb-entry ${e.name === myName ? 'me' : ''}">
-       <span><span class="lb-rank">${i + 1}.</span> ${e.name}</span>
+       <span><span class="lb-rank">${i + 1}.</span> ${e.name || 'Unknown'}</span>
        <span>${Math.floor(e.mass)}</span>
      </div>`
   ).join('');
@@ -836,7 +840,6 @@ function draw() {
   ctx.scale(camera.scale, camera.scale);
   ctx.translate(-camera.x, -camera.y);
 
-  // 網格
   ctx.strokeStyle = '#0d1220'; ctx.lineWidth = 1.2;
   ctx.beginPath();
   for (let i = 0; i <= WORLD_SIZE; i += 100) {
@@ -845,11 +848,11 @@ function draw() {
   }
   ctx.stroke();
 
-  // 世界邊界
-  ctx.strokeStyle = '#1a2a1a'; ctx.lineWidth = 5;
+  // 世界實體邊界，加上明顯發光
+  ctx.strokeStyle = '#1a3a2a'; 
+  ctx.lineWidth = 10;
   ctx.strokeRect(0, 0, WORLD_SIZE, WORLD_SIZE);
 
-  // 食物
   foods.forEach(f => {
     ctx.fillStyle = f.color;
     ctx.beginPath();
@@ -857,7 +860,6 @@ function draw() {
     ctx.fill();
   });
 
-  // 噴射食丸
   ejectedPellets.forEach(p => {
     ctx.save();
     ctx.globalAlpha = p.life / 80;
@@ -868,7 +870,6 @@ function draw() {
     ctx.restore();
   });
 
-  // 遠端玩家（Ghost 渲染）
   for (const id in remotePlayers) {
     if (id === playerId) continue;
     const rp = remotePlayers[id];
@@ -879,8 +880,6 @@ function draw() {
     ctx.globalAlpha = 0.5;
     ctx.fillStyle = rp.color;
     ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#ff3355'; ctx.lineWidth = 3;
-    ctx.stroke();
     ctx.globalAlpha = 1;
     ctx.fillStyle = 'white'; ctx.textAlign = 'center';
     ctx.font = `bold ${Math.max(11, r * 0.32)}px Rajdhani, Arial`;
@@ -888,7 +887,7 @@ function draw() {
     ctx.restore();
   }
 
-  // 細胞（由小到大繪製避免遮擋）
+  // 先畫小的、再畫大的，避免小細胞被完全遮擋
   [...entities].sort((a, b) => a.mass - b.mass).forEach(e => e.draw());
 
   ctx.restore();
@@ -908,7 +907,6 @@ function syncMyData() {
   db.ref('leaderboard/' + playerId).set({ name: main.name, score: totalMass });
 }
 
-// 全球排行榜監聽
 db.ref('leaderboard').orderByChild('score').limitToLast(10).on('value', snap => {
   const list = [];
   snap.forEach(child => list.push(child.val()));
@@ -918,7 +916,6 @@ db.ref('leaderboard').orderByChild('score').limitToLast(10).on('value', snap => 
   ).join('');
 });
 
-// 遠端玩家監聽
 db.ref('players').on('value', snap => { remotePlayers = snap.val() || {}; });
 
 // =====================================================
@@ -936,7 +933,6 @@ function gameOver() {
   document.getElementById('resTime').innerText = dur + 's';
   document.getElementById('deathScreen').style.display = 'flex';
 
-  // 全球名次計算
   db.ref('leaderboard').orderByChild('score').once('value', snap => {
     const count = snap.numChildren();
     let rank = count;
