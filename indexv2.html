@@ -1,260 +1,942 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Cell World - Global Evolution</title>
-    
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    
-    <style>
-        :root { --primary: #00ff88; --bg: #0a0a0c; --glass: rgba(15, 20, 25, 0.7); }
-        body { margin: 0; overflow: hidden; background: var(--bg); color: white; font-family: 'Segoe UI', Tahoma, sans-serif; user-select: none; -webkit-user-select: none; }
-        canvas { display: block; cursor: default; touch-action: none; /* 禁用瀏覽器預設滑動 */ }
-        canvas.playing { cursor: none; }
-        
-        /* -- 優化版：玻璃擬物化登入介面 -- */
-        #menu { 
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-            background: var(--glass); padding: 40px; border-radius: 20px; 
-            border: 1px solid rgba(255,255,255,0.1); text-align: center; z-index: 10; 
-            width: 85%; max-width: 400px; 
-            backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
-        }
-        h1 { color: var(--primary); margin-top: 0; letter-spacing: 4px; font-size: clamp(24px, 5vw, 36px); text-shadow: 0 0 10px rgba(0,255,136,0.5); }
-        
-        .instruction { text-align: left; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 12px; margin-bottom: 25px; font-size: 14px; line-height: 1.8; color: #ccc; border: 1px solid rgba(255,255,255,0.05);}
-        .instruction span { color: var(--primary); font-weight: bold; }
-        
-        input { width: calc(100% - 30px); padding: 15px; font-size: 16px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.5); color: white; margin-bottom: 20px; outline: none; text-align: center; transition: 0.3s;}
-        input:focus { border-color: var(--primary); box-shadow: 0 0 10px rgba(0,255,136,0.3); }
-        
-        button.start-btn { 
-            width: 100%; padding: 16px; font-size: 18px; cursor: pointer; 
-            background: linear-gradient(135deg, #00aa55, var(--primary)); color: #000; 
-            border: none; border-radius: 10px; font-weight: 800; letter-spacing: 1px;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        button.start-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,255,136,0.4); }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Cell World: Evolution — Global Edition</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;600&display=swap');
 
-        /* --- 遊戲內 UI --- */
-        #ui { position: fixed; top: 20px; left: 20px; display: none; pointer-events: none; z-index: 5;}
-        .status-text { font-size: 24px; font-weight: bold; margin-bottom: 10px; text-shadow: 2px 2px 4px #000;}
-        .status-text span { color: var(--primary); }
-        .inventory-slot { display: inline-block; padding: 8px 15px; background: rgba(0,0,0,0.6); border: 1px solid #555; border-radius: 8px; backdrop-filter: blur(5px);}
-        
-        /* 控制音樂的按鈕 */
-        #musicToggle { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--glass); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 10px 20px; border-radius: 20px; cursor: pointer; z-index: 10; display: none; backdrop-filter: blur(5px);}
-        
-        /* 排行榜 */
-        #leaderboardContainer { position: fixed; right: 20px; top: 20px; display: none; z-index: 5; width: 220px; pointer-events: none;}
-        .lb-box { background: rgba(0,0,0,0.6); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 10px; backdrop-filter: blur(5px);}
-        .lb-header { font-weight:bold; margin-bottom:12px; color:var(--primary); border-bottom:1px solid #444; padding-bottom:8px; text-align: center; font-size: 14px; }
-        .lb-entry { margin-bottom: 8px; font-size: 13px; display: flex; justify-content: space-between; text-shadow: 1px 1px 2px #000;}
-        
-        #deathScreen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 20; backdrop-filter: blur(10px);}
-        #deathScreen h2 { color: #ff3333; font-size: clamp(36px, 8vw, 64px); text-shadow: 0 0 20px rgba(255,51,51,0.5);}
+  :root {
+    --primary: #00ff88;
+    --danger:  #ff3355;
+    --accent:  #00ddff;
+    --gold:    #ffbb44;
+    --bg:      #060810;
+    --glass:   rgba(8, 14, 24, 0.88);
+    --border:  rgba(0, 255, 136, 0.18);
+  }
 
-        /* --- 手機專屬虛擬按鍵 --- */
-        #mobile-controls { display: none; position: fixed; bottom: 30px; right: 20px; gap: 15px; z-index: 10; }
-        .mob-btn { width: 65px; height: 65px; border-radius: 50%; background: rgba(0, 255, 136, 0.15); border: 2px solid var(--primary); color: white; font-weight: bold; font-size: 16px; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(5px); user-select: none; }
-        .mob-btn:active { background: rgba(0, 255, 136, 0.5); transform: scale(0.95); }
-        
-        /* 媒體查詢：當螢幕寬度小於 768px (手機/平板) 時顯示虛擬按鍵，並隱藏部分排版 */
-        @media (max-width: 768px) {
-            #mobile-controls { display: flex; }
-            .instruction { font-size: 12px; }
-            #leaderboardContainer { display: none !important; /* 手機畫面小，先隱藏排行榜 */ }
-        }
-    </style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    margin: 0; overflow: hidden;
+    background: var(--bg);
+    color: white;
+    font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+    user-select: none; -webkit-user-select: none;
+  }
+
+  canvas { display: block; touch-action: none; }
+  canvas.playing { cursor: none; }
+
+  /* ── Scanline overlay ── */
+  body::after {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 999;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(0, 0, 0, 0.04) 2px, rgba(0, 0, 0, 0.04) 4px
+    );
+  }
+
+  /* ── Menu ── */
+  #menu {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--glass);
+    padding: 44px 40px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    text-align: center; z-index: 10;
+    width: 88%; max-width: 420px;
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 0 60px rgba(0, 255, 136, 0.08), 0 20px 60px rgba(0,0,0,0.7);
+  }
+
+  .menu-logo {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(26px, 6vw, 40px);
+    font-weight: 900;
+    letter-spacing: 6px;
+    color: var(--primary);
+    text-shadow: 0 0 20px rgba(0,255,136,0.5), 0 0 60px rgba(0,255,136,0.2);
+    margin: 0 0 6px;
+  }
+  .menu-sub {
+    font-size: 11px;
+    letter-spacing: 4px;
+    color: rgba(0,255,136,0.45);
+    text-transform: uppercase;
+    margin: 0 0 28px;
+  }
+
+  .instruction {
+    text-align: left;
+    background: rgba(0,0,0,0.35);
+    padding: 14px 16px;
+    border-radius: 10px;
+    margin-bottom: 22px;
+    font-size: 13px;
+    line-height: 1.9;
+    color: #b0b8cc;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .instruction span { color: var(--primary); font-weight: 700; }
+  .instruction b { color: #dde; }
+
+  input {
+    width: 100%; padding: 14px 16px; font-size: 15px;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 255, 136, 0.25);
+    background: rgba(0, 0, 0, 0.45);
+    color: white; margin-bottom: 18px; outline: none;
+    text-align: center;
+    font-family: 'Rajdhani', sans-serif; font-size: 16px; letter-spacing: 1px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  input::placeholder { color: rgba(255,255,255,0.3); }
+  input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 14px rgba(0,255,136,0.3);
+  }
+
+  .start-btn {
+    width: 100%; padding: 15px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 15px; font-weight: 700; letter-spacing: 2px;
+    cursor: pointer;
+    background: linear-gradient(135deg, #009944, var(--primary));
+    color: #001a0e;
+    border: none; border-radius: 10px;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .start-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(0,255,136,0.45);
+  }
+  .start-btn:active { transform: scale(0.97); }
+
+  /* ── HUD ── */
+  #ui {
+    position: fixed; top: 20px; left: 20px;
+    display: none; pointer-events: none; z-index: 5;
+  }
+  .mass-display {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 22px; font-weight: 700;
+    text-shadow: 0 0 10px rgba(0,255,136,0.6);
+    margin-bottom: 6px;
+  }
+  .mass-display span { color: var(--primary); }
+  .inventory-slot {
+    display: inline-block; padding: 5px 14px;
+    background: rgba(0,0,0,0.55);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    font-size: 13px; color: #aac;
+  }
+  .inventory-slot.active { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Music toggle ── */
+  #musicToggle {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--glass);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.7);
+    padding: 8px 20px; border-radius: 20px;
+    cursor: pointer; z-index: 10; display: none;
+    backdrop-filter: blur(8px);
+    font-family: 'Rajdhani', sans-serif; font-size: 13px;
+    transition: color 0.3s, border-color 0.3s;
+  }
+  #musicToggle:hover { color: white; border-color: var(--primary); }
+
+  /* ── Leaderboard ── */
+  #leaderboardContainer {
+    position: fixed; right: 20px; top: 20px;
+    display: none; z-index: 5; width: 210px; pointer-events: none;
+  }
+  .lb-box {
+    background: rgba(4, 8, 18, 0.72);
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 10px;
+    backdrop-filter: blur(8px);
+  }
+  .lb-header {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700; font-size: 11px; letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--primary);
+    border-bottom: 1px solid rgba(0,255,136,0.2);
+    padding-bottom: 8px; margin-bottom: 10px;
+    text-align: center;
+  }
+  .lb-header.gold { color: var(--gold); border-color: rgba(255,187,68,0.3); }
+  .lb-entry {
+    margin-bottom: 6px; font-size: 12px;
+    display: flex; justify-content: space-between; align-items: center;
+    color: #8899bb;
+  }
+  .lb-entry.me { color: var(--primary); font-weight: 700; }
+  .lb-rank { color: rgba(255,255,255,0.3); margin-right: 5px; font-size: 10px; }
+
+  /* ── Death screen ── */
+  #deathScreen {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.95);
+    display: none; flex-direction: column;
+    justify-content: center; align-items: center;
+    z-index: 20; backdrop-filter: blur(12px);
+    text-align: center;
+  }
+  #deathScreen h2 {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--danger);
+    font-size: clamp(28px, 7vw, 56px);
+    text-shadow: 0 0 30px rgba(255,51,85,0.6);
+    margin: 0 0 4px;
+    letter-spacing: 3px;
+  }
+  .death-sub { color: rgba(255,255,255,0.3); font-size: 13px; margin-bottom: 30px; letter-spacing: 2px; }
+  .stat-box {
+    display: flex; gap: 40px;
+    background: rgba(255,255,255,0.04);
+    padding: 22px 36px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 24px;
+  }
+  .stat-item { display: flex; flex-direction: column; align-items: center; }
+  .stat-val {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 30px; color: var(--primary); font-weight: 700;
+  }
+  .stat-label { font-size: 11px; color: #556; margin-top: 5px; letter-spacing: 1px; text-transform: uppercase; }
+  #globalRankText { font-size: 14px; color: #8899aa; margin-bottom: 28px; }
+
+  /* ── Mobile controls ── */
+  #mobile-controls {
+    display: none;
+    position: fixed; bottom: 28px; right: 18px;
+    gap: 12px; z-index: 10;
+  }
+  .mob-btn {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: rgba(0, 255, 136, 0.1);
+    border: 2px solid rgba(0, 255, 136, 0.5);
+    color: white; font-weight: 700; font-size: 12px;
+    display: flex; flex-direction: column; justify-content: center;
+    align-items: center; text-align: center; line-height: 1.3;
+    backdrop-filter: blur(8px); user-select: none;
+    -webkit-user-select: none; transition: background 0.1s, transform 0.1s;
+  }
+  .mob-btn:active { background: rgba(0, 255, 136, 0.4); transform: scale(0.92); }
+  .mob-btn.skill { border-color: rgba(0, 220, 255, 0.5); }
+
+  @media (max-width: 768px) {
+    #mobile-controls { display: flex; }
+    #leaderboardContainer { display: none !important; }
+    .instruction { font-size: 12px; }
+  }
+</style>
 </head>
 <body>
 
+<!-- ── 開始選單 ── -->
 <div id="menu">
-    <h1>CELL WORLD</h1>
-    <div class="instruction">
-        💻 <b>電腦版</b>：<br>
-        滑鼠移動 | <span>空白鍵</span>: 分裂 | <span>W</span>: 餵食 | <span>E</span>: 技能<br><br>
-        📱 <b>手機版</b>：<br>
-        螢幕滑動控制方向 | 右下角按鈕施放技能
-    </div>
-    <input id="playerName" list="savedNames" placeholder="輸入你的演化代碼..." autocomplete="off" maxlength="12">
-    <datalist id="savedNames"></datalist>
-    <button class="start-btn" onclick="startGame()">進入全球演化</button>
+  <p class="menu-logo">CELL WORLD</p>
+  <p class="menu-sub">Global Evolution</p>
+  <div class="instruction">
+    💻 <b>電腦版</b><br>
+    滑鼠移動 ｜ <span>空白鍵</span>：分裂 ｜ <span>W</span>：餵食 ｜ <span>E</span>：加速技能
+    <br><br>
+    📱 <b>手機版</b><br>
+    滑動控制方向 ｜ 右下角按鈕施放技能
+  </div>
+  <input id="playerName" list="savedNameList" placeholder="輸入你的演化代碼..." autocomplete="off" maxlength="12">
+  <datalist id="savedNameList"></datalist>
+  <button class="start-btn" onclick="startGame()">▶ 進入全球演化</button>
 </div>
 
-<button id="musicToggle" onclick="toggleMusic()">🎵 音樂: 關</button>
+<!-- ── 音樂按鈕 ── -->
+<button id="musicToggle" onclick="toggleMusic()">♪ 音樂：關</button>
 
+<!-- ── 遊戲內 HUD ── -->
 <div id="ui">
-    <div class="status-text" id="massText">總質量: <span>0</span></div>
-    <div style="color:#ddd; font-size: 14px;">武裝：<span id="inventorySlot" class="inventory-slot">空</span></div>
+  <div class="mass-display">質量：<span id="massDisplay">0</span></div>
+  <div>武裝：<span id="inventorySlot" class="inventory-slot">空</span></div>
 </div>
 
+<!-- ── 手機虛擬按鍵 ── -->
 <div id="mobile-controls">
-    <div class="mob-btn" onclick="executeEject(playerId)">餵食<br>(W)</div>
-    <div class="mob-btn" onclick="executeSplit(playerId)">分裂<br>(空白)</div>
-    <div class="mob-btn" onclick="executePowerUp(playerId)" style="border-color:#00ffff;">技能<br>(E)</div>
+  <div class="mob-btn" ontouchstart="executeEject()">餵食<br>W</div>
+  <div class="mob-btn" ontouchstart="executeSplit()">分裂<br>空白</div>
+  <div class="mob-btn skill" ontouchstart="executePowerUp()">技能<br>E</div>
 </div>
 
+<!-- ── 排行榜 ── -->
 <div id="leaderboardContainer">
-    <div class="lb-box">
-        <div class="lb-header">📍 區域戰局</div>
-        <div id="lb-content"></div>
-    </div>
-    <div class="lb-box" style="border-color: #ffaa00; box-shadow: 0 0 10px rgba(255,170,0,0.2);">
-        <div class="lb-header" style="color: #ffaa00;">🏆 全球名人堂</div>
-        <div id="global-lb-content">載入中...</div>
-    </div>
+  <div class="lb-box">
+    <div class="lb-header">📍 區域戰況</div>
+    <div id="local-lb-content"></div>
+  </div>
+  <div class="lb-box" style="border-color:rgba(255,187,68,0.2);">
+    <div class="lb-header gold">🏆 全球名人堂</div>
+    <div id="global-lb-content" style="color:#556; font-size:12px;">載入中...</div>
+  </div>
 </div>
 
+<!-- ── 結算畫面 ── -->
 <div id="deathScreen">
-    <h2>遭到吞噬</h2>
-    <p id="finalScore" style="font-size: 24px; color:#fff; margin-bottom:30px;">最終質量: 0</p>
-    <button class="start-btn" style="width: 200px;" onclick="location.reload()">重新開始</button>
+  <h2>演化中斷</h2>
+  <p class="death-sub">YOUR CELLS HAVE BEEN CONSUMED</p>
+  <div class="stat-box">
+    <div class="stat-item">
+      <span class="stat-val" id="resMass">0</span>
+      <span class="stat-label">最高質量</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-val" id="resTime">0s</span>
+      <span class="stat-label">存活時間</span>
+    </div>
+  </div>
+  <div id="globalRankText">正在同步全球排名...</div>
+  <button class="start-btn" style="width:210px;" onclick="location.reload()">↺ 重新演化</button>
 </div>
 
 <canvas id="game"></canvas>
 
 <script>
-// ==========================================
-// 1. FIREBASE 核心配置 (請填入你的金鑰)
-// ==========================================
+// =====================================================
+// 1. FIREBASE 配置（請替換成你自己的金鑰）
+// =====================================================
 const firebaseConfig = {
-    apiKey: "【在此輸入你的 API_KEY】",
-    authDomain: "【在此輸入你的 PROJECT_ID】.firebaseapp.com",
-    databaseURL: "https://【在此輸入你的 PROJECT_ID】-default-rtdb.firebaseio.com",
-    projectId: "【在此輸入你的 PROJECT_ID】",
-    storageBucket: "【在此輸入你的 PROJECT_ID】.appspot.com",
-    messagingSenderId: "【在此輸入你的 SENDER_ID】",
-    appId: "【在此輸入你的 APP_ID】"
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+  databaseURL:       "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
 };
-
-if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// ==========================================
-// 2. 音樂與 UI 系統
-// ==========================================
-const bgm = new Audio('bgm.mp3'); // 讀取同資料夾下的 bgm.mp3
-bgm.loop = true;
-bgm.volume = 0.4;
+// =====================================================
+// 2. 音樂系統
+// =====================================================
+const bgm = new Audio('bgm.mp3');
+bgm.loop = true; bgm.volume = 0.4;
 let isMusicPlaying = false;
 
 function toggleMusic() {
-    let btn = document.getElementById('musicToggle');
-    if (isMusicPlaying) {
-        bgm.pause();
-        btn.innerText = "🎵 音樂: 關";
-    } else {
-        bgm.play().catch(e => console.log("等待玩家互動"));
-        btn.innerText = "🎵 音樂: 開";
-    }
-    isMusicPlaying = !isMusicPlaying;
+  const btn = document.getElementById('musicToggle');
+  if (isMusicPlaying) {
+    bgm.pause();
+    btn.innerText = '♪ 音樂：關';
+  } else {
+    bgm.play().catch(() => {});
+    btn.innerText = '♫ 音樂：開';
+  }
+  isMusicPlaying = !isMusicPlaying;
 }
 
-// ==========================================
-// 3. 遊戲變數與控制系統 (兼容手機與電腦)
-// ==========================================
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d", { alpha: false });
-canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+// =====================================================
+// 3. 核心設定與變數
+// =====================================================
+const canvas = document.getElementById('game');
+const ctx    = canvas.getContext('2d', { alpha: false });
+canvas.width  = window.innerWidth;
+canvas.height = window.innerHeight;
 
 const WORLD_SIZE = 8000;
-let entities = [], foods = [], powerups = [], playerCells = [];
-let remotePlayers = {}; 
-let playerId = "player_" + Math.random().toString(36).substr(2, 9);
-let mouseX = canvas.width / 2, mouseY = canvas.height / 2;
-let camera = { x: WORLD_SIZE/2, y: WORLD_SIZE/2, scale: 1 };
-let globalTime = 0, gameRunning = false;
+const MAX_BOTS   = 60;
+const MAX_FOOD   = 2000;
 
-// --- 電腦滑鼠監聽 ---
-document.addEventListener("mousemove", e => { mouseX = e.clientX; mouseY = e.clientY; });
+let entities       = [];   // 所有 Cell 物件（玩家 + AI）
+let foods          = [];   // 食物點
+let ejectedPellets = [];   // 玩家噴出的食丸
+let playerCells    = [];   // 玩家控制的所有細胞（分裂後多個）
+let remotePlayers  = {};   // Firebase 遠端玩家快照
 
-// --- 手機觸控監聽 ---
-canvas.addEventListener('touchstart', handleTouch, {passive: false});
-canvas.addEventListener('touchmove', handleTouch, {passive: false});
+let gameRunning = false;
+let startTime   = 0;
+let peakMass    = 0;
+let powerupActive  = false;
+let powerupEndTime = 0;
 
-function handleTouch(e) {
-    if(gameRunning) e.preventDefault(); // 防止畫面跟著手指拉扯滑動
-    mouseX = e.touches[0].clientX;
-    mouseY = e.touches[0].clientY;
-}
+let mouseX = canvas.width  / 2;
+let mouseY = canvas.height / 2;
+let camera = { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2, scale: 1 };
 
-// ==========================================
-// 4. 多人同步與排行榜
-// ==========================================
-db.ref('players').on('value', (snapshot) => { remotePlayers = snapshot.val() || {}; });
+// 每個連線 session 的唯一 ID
+const playerId = 'p_' + Math.random().toString(36).substr(2, 9);
 
-db.ref('leaderboard').orderByChild('score').limitToLast(10).on('value', (snapshot) => {
-    let scores = [];
-    snapshot.forEach(child => { scores.push(child.val()); });
-    scores.reverse();
-    let html = scores.map((s, i) => `<div class="lb-entry" style="color:#ddd;"><span>${i+1}. ${s.name}</span><span>${s.score}</span></div>`).join('');
-    document.getElementById("global-lb-content").innerHTML = html;
+// =====================================================
+// 4. 輸入：滑鼠、觸控、鍵盤
+// =====================================================
+document.addEventListener('mousemove', e => {
+  mouseX = e.clientX; mouseY = e.clientY;
 });
 
-// [此處請直接貼上你之前完整的 Class (SpatialHash, Entity, Cell, FoodItem, Virus, PowerUp)]
-// [以及 executeEject, executeSplit, executePowerUp 的函式代碼]
-// (由於長度限制，請將上一版本的遊戲邏輯類別完美貼回此處)
-
-function syncMyData() {
-    if (playerCells.length === 0) return;
-    let mainCell = playerCells.sort((a,b) => b.mass - a.mass)[0];
-    let totalMass = playerCells.reduce((sum, c) => sum + Math.floor(c.mass), 0);
-    db.ref('players/' + playerId).set({ name: mainCell.name, x: Math.floor(mainCell.x), y: Math.floor(mainCell.y), mass: totalMass, color: mainCell.colorStr, lastUpdate: Date.now() });
+canvas.addEventListener('touchstart', handleTouch, { passive: false });
+canvas.addEventListener('touchmove',  handleTouch, { passive: false });
+function handleTouch(e) {
+  if (gameRunning) e.preventDefault();
+  mouseX = e.touches[0].clientX;
+  mouseY = e.touches[0].clientY;
 }
 
-function drawRemotePlayers(ctx) {
-    for (let id in remotePlayers) {
-        if (id === playerId) continue;
-        let rp = remotePlayers[id];
-        if (Date.now() - rp.lastUpdate > 3000) continue;
-        let r = 15 + Math.pow(rp.mass, 0.45) * 2;
-        ctx.save(); ctx.translate(rp.x, rp.y); ctx.globalAlpha = 0.6;
-        ctx.fillStyle = rp.color; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = "#ff3333"; ctx.lineWidth = 4; ctx.stroke();
-        ctx.globalAlpha = 1.0; ctx.fillStyle = "white"; ctx.textAlign = "center"; ctx.font = `bold ${Math.max(14, r * 0.3)}px Arial`; ctx.fillText(rp.name, 0, 0); ctx.restore();
+document.addEventListener('keydown', e => {
+  if (!gameRunning) return;
+  if (e.code === 'Space')  { e.preventDefault(); executeSplit(); }
+  if (e.code === 'KeyW')   executeEject();
+  if (e.code === 'KeyE')   executePowerUp();
+});
+
+// ── 載入暱稱歷史 ──
+(function loadSavedNames() {
+  const saved = JSON.parse(localStorage.getItem('cellWorldNames') || '[]');
+  const dl = document.getElementById('savedNameList');
+  saved.forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n; dl.appendChild(opt);
+  });
+})();
+
+// =====================================================
+// 5. Cell 類別（含美術、物理）
+// =====================================================
+class Cell {
+  constructor(x, y, mass, name, id, isBot = true) {
+    this.x = x; this.y = y;
+    this.id = id; this.name = name; this.isBot = isBot;
+
+    // 分裂衝刺速度
+    this.splitVx = 0; this.splitVy = 0;
+    // 合併冷卻（> 0 時禁止與同 id 細胞合併）
+    this.mergeTimer = 0;
+    // AI 方向選取冷卻
+    this.targetChangeCd = 0;
+    this.targetAngle = Math.random() * Math.PI * 2;
+
+    this.hue = isBot ? Math.floor(Math.random() * 360) : 150;
+    this.colorStr = `hsl(${this.hue}, 80%, 52%)`;
+    this.updateMass(mass);
+  }
+
+  updateMass(m) {
+    this.mass = Math.max(10, m);
+    this.r = 20 + Math.pow(this.mass, 0.45) * 2.2;
+  }
+
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // 果凍漸層
+    const grad = ctx.createRadialGradient(0, 0, this.r * 0.08, 0, 0, this.r);
+    grad.addColorStop(0,    '#ffffff');
+    grad.addColorStop(0.22, this.colorStr);
+    grad.addColorStop(1,    '#000000');
+    ctx.fillStyle = grad;
+
+    // 波動輪廓
+    const pts = 18, t = Date.now() * 0.005;
+    ctx.beginPath();
+    for (let i = 0; i <= pts; i++) {
+      const a = (i / pts) * Math.PI * 2;
+      const w = Math.sin(a * 5 + t) * (this.r * 0.03);
+      const px = Math.cos(a) * (this.r + w);
+      const py = Math.sin(a) * (this.r + w);
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
     }
+    ctx.closePath();
+    ctx.fill();
+
+    // 內側光澤
+    const shine = ctx.createRadialGradient(-this.r * 0.3, -this.r * 0.3, 0, 0, 0, this.r * 0.7);
+    shine.addColorStop(0,   'rgba(255,255,255,0.25)');
+    shine.addColorStop(0.5, 'rgba(255,255,255,0.06)');
+    shine.addColorStop(1,   'transparent');
+    ctx.fillStyle = shine;
+    ctx.beginPath();
+    for (let i = 0; i <= pts; i++) {
+      const a = (i / pts) * Math.PI * 2;
+      const w = Math.sin(a * 5 + t) * (this.r * 0.03);
+      const px = Math.cos(a) * (this.r + w);
+      const py = Math.sin(a) * (this.r + w);
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // 名稱文字
+    if (this.r > 22) {
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center';
+      ctx.font = `bold ${Math.max(11, this.r * 0.38)}px Rajdhani, Arial`;
+      ctx.shadowColor = 'rgba(0,0,0,0.6)';
+      ctx.shadowBlur = 4;
+      ctx.fillText(this.name, 0, this.r * 0.13);
+      ctx.shadowBlur = 0;
+    }
+    ctx.restore();
+  }
 }
 
+// =====================================================
+// 6. 遊戲啟動
+// =====================================================
 function startGame() {
-    let nameInput = document.getElementById("playerName").value.trim();
-    let name = nameInput || "Cell_" + Math.floor(Math.random()*100);
-    
-    // 儲存暱稱
-    let saved = JSON.parse(localStorage.getItem('cellWorldNames') || '[]');
-    if(nameInput && !saved.includes(nameInput)) { saved.unshift(nameInput); localStorage.setItem('cellWorldNames', JSON.stringify(saved.slice(0,5))); }
+  const nameInput = document.getElementById('playerName').value.trim();
+  const name = nameInput || ('Cell_' + Math.floor(Math.random() * 999));
 
-    db.ref('players/' + playerId).onDisconnect().remove();
+  // 儲存暱稱（最多 5 筆）
+  let saved = JSON.parse(localStorage.getItem('cellWorldNames') || '[]');
+  if (nameInput && !saved.includes(nameInput)) {
+    saved.unshift(nameInput);
+    localStorage.setItem('cellWorldNames', JSON.stringify(saved.slice(0, 5)));
+  }
 
-    document.getElementById("menu").style.display = "none";
-    document.getElementById("ui").style.display = "block";
-    document.getElementById("musicToggle").style.display = "block";
-    
-    // 電腦版才顯示排行榜
-    if(window.innerWidth > 768) { document.getElementById("leaderboardContainer").style.display = "block"; }
-    
-    canvas.classList.add("playing");
-    
-    // 啟動音樂
-    if(!isMusicPlaying) toggleMusic();
+  // Firebase 離線自動清理
+  db.ref('players/' + playerId).onDisconnect().remove();
 
-    entities = []; foods = []; powerups = []; playerCells = [];
-    let p = new Cell(WORLD_SIZE/2, WORLD_SIZE/2, 60, name, playerId, false);
-    playerCells.push(p); entities.push(p);
-    
-    // 生成環境 (請補上你原本的生成迴圈)
-    // ...
-    
-    gameRunning = true;
-    requestAnimationFrame(loop);
+  // 顯示 UI
+  document.getElementById('menu').style.display         = 'none';
+  document.getElementById('ui').style.display           = 'block';
+  document.getElementById('musicToggle').style.display  = 'block';
+  if (window.innerWidth > 768) {
+    document.getElementById('leaderboardContainer').style.display = 'block';
+  }
+  canvas.classList.add('playing');
+
+  // 嘗試啟動音樂
+  if (!isMusicPlaying) toggleMusic();
+
+  // 重置狀態
+  entities = []; foods = []; ejectedPellets = []; playerCells = [];
+  peakMass = 0; powerupActive = false;
+
+  // 建立玩家
+  const p = new Cell(WORLD_SIZE / 2, WORLD_SIZE / 2, 60, name, playerId, false);
+  playerCells.push(p);
+  entities.push(p);
+
+  // 生成 AI
+  for (let i = 0; i < MAX_BOTS; i++) spawnBot(i);
+
+  // 生成食物
+  for (let i = 0; i < MAX_FOOD; i++) spawnFood();
+
+  startTime = Date.now();
+  gameRunning = true;
+  requestAnimationFrame(loop);
 }
 
-// ... 補上 update(), draw(), loop() 函式 (邏輯與前一版相同) ...
+function spawnBot(i) {
+  entities.push(new Cell(
+    50 + Math.random() * (WORLD_SIZE - 100),
+    50 + Math.random() * (WORLD_SIZE - 100),
+    30 + Math.random() * 250,
+    'Bot_' + i,
+    'bot_' + i,
+    true
+  ));
+}
 
-window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+function spawnFood() {
+  foods.push({
+    x: Math.random() * WORLD_SIZE,
+    y: Math.random() * WORLD_SIZE,
+    r: 5,
+    color: `hsl(${Math.random() * 360}, 72%, 60%)`
+  });
+}
+
+// =====================================================
+// 7. 動作：分裂、餵食、加速技能
+// =====================================================
+function getWorldMouse() {
+  return {
+    x: mouseX / camera.scale + camera.x,
+    y: mouseY / camera.scale + camera.y
+  };
+}
+
+function executeSplit() {
+  const wm = getWorldMouse();
+  const newCells = [];
+  [...playerCells].forEach(c => {
+    if (c.mass < 42) return;
+    const angle = Math.atan2(wm.y - c.y, wm.x - c.x);
+    const half  = c.mass / 2;
+    c.updateMass(half);
+    c.mergeTimer = 210;                          // ~3.5 秒禁止合併
+
+    const nc = new Cell(
+      c.x + Math.cos(angle) * c.r,
+      c.y + Math.sin(angle) * c.r,
+      half, c.name, c.id, false
+    );
+    nc.hue = c.hue; nc.colorStr = c.colorStr;
+    nc.splitVx = Math.cos(angle) * 18;
+    nc.splitVy = Math.sin(angle) * 18;
+    nc.mergeTimer = 210;
+    newCells.push(nc);
+  });
+  newCells.forEach(nc => { playerCells.push(nc); entities.push(nc); });
+}
+
+function executeEject() {
+  const wm = getWorldMouse();
+  playerCells.forEach(c => {
+    if (c.mass < 30) return;
+    const angle = Math.atan2(wm.y - c.y, wm.x - c.x);
+    c.updateMass(c.mass - 13);
+    ejectedPellets.push({
+      x: c.x + Math.cos(angle) * (c.r + 10),
+      y: c.y + Math.sin(angle) * (c.r + 10),
+      vx: Math.cos(angle) * 15,
+      vy: Math.sin(angle) * 15,
+      r: 8, mass: 11,
+      color: c.colorStr,
+      life: 80
+    });
+  });
+}
+
+function executePowerUp() {
+  if (powerupActive) return;
+  powerupActive  = true;
+  powerupEndTime = Date.now() + 3500;
+  const slot = document.getElementById('inventorySlot');
+  slot.innerText = '⚡ 加速中';
+  slot.classList.add('active');
+  setTimeout(() => {
+    powerupActive = false;
+    slot.innerText = '空';
+    slot.classList.remove('active');
+  }, 3500);
+}
+
+// =====================================================
+// 8. 更新邏輯
+// =====================================================
+let lastSyncTime = 0;
+
+function update() {
+  const wm = getWorldMouse();
+
+  // ── 玩家消亡判斷 ──
+  if (playerCells.length === 0) { gameOver(); return; }
+
+  // ── 玩家細胞移動 ──
+  playerCells.forEach(c => {
+    // 分裂後衝刺衰減
+    c.x += c.splitVx; c.y += c.splitVy;
+    c.splitVx *= 0.80; c.splitVy *= 0.80;
+    if (Math.abs(c.splitVx) < 0.08) c.splitVx = 0;
+    if (Math.abs(c.splitVy) < 0.08) c.splitVy = 0;
+    if (c.mergeTimer > 0) c.mergeTimer--;
+
+    // 滑鼠追蹤
+    const dist  = Math.hypot(wm.x - c.x, wm.y - c.y);
+    let speed = 5.5 * Math.pow(100 / Math.max(c.mass, 1), 0.18);
+    if (powerupActive) speed *= 1.75;
+    if (dist > 8) {
+      const ang = Math.atan2(wm.y - c.y, wm.x - c.x);
+      c.x += Math.cos(ang) * speed;
+      c.y += Math.sin(ang) * speed;
+    }
+
+    // 世界邊界夾縮
+    c.x = Math.max(c.r, Math.min(WORLD_SIZE - c.r, c.x));
+    c.y = Math.max(c.r, Math.min(WORLD_SIZE - c.r, c.y));
+
+    peakMass = Math.max(peakMass, c.mass);
+  });
+
+  // ── 玩家細胞合併（同 ID + 冷卻結束 + 重疊）──
+  for (let i = playerCells.length - 1; i >= 1; i--) {
+    for (let j = i - 1; j >= 0; j--) {
+      const a = playerCells[i], b = playerCells[j];
+      if (!a || !b) continue;
+      if (a.mergeTimer > 0 || b.mergeTimer > 0) continue;
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < (a.r + b.r) * 0.52) {
+        b.updateMass(b.mass + a.mass);
+        const eIdx = entities.indexOf(a);
+        if (eIdx > -1) entities.splice(eIdx, 1);
+        playerCells.splice(i, 1);
+        break;
+      }
+    }
+  }
+
+  // ── 攝影機 ──
+  if (playerCells.length > 0) {
+    const totalMass = playerCells.reduce((s, c) => s + c.mass, 0);
+    const avgMass   = totalMass / playerCells.length;
+    const cenX = playerCells.reduce((s, c) => s + c.x, 0) / playerCells.length;
+    const cenY = playerCells.reduce((s, c) => s + c.y, 0) / playerCells.length;
+    camera.x += (cenX - canvas.width  / 2 / camera.scale - camera.x) * 0.1;
+    camera.y += (cenY - canvas.height / 2 / camera.scale - camera.y) * 0.1;
+    const tScale = Math.max(0.22, Math.min(1.1, 80 / Math.pow(Math.max(avgMass, 1), 0.33)));
+    camera.scale += (tScale - camera.scale) * 0.06;
+  }
+
+  // ── AI 行為（追逐食物 / 逃跑）──
+  entities.forEach(e => {
+    if (!e.isBot) return;
+    e.targetChangeCd--;
+    if (e.targetChangeCd <= 0) {
+      e.targetChangeCd = 55 + Math.floor(Math.random() * 70);
+      let bestAngle = e.targetAngle + (Math.random() - 0.5) * 0.6;
+      let closestPreyDist = 900, closestThreatDist = 900;
+
+      entities.forEach(other => {
+        if (e === other) return;
+        const d = Math.hypot(e.x - other.x, e.y - other.y);
+        if (d > 900) return;
+        if (e.mass > other.mass * 1.2 && d < closestPreyDist) {
+          closestPreyDist = d;
+          bestAngle = Math.atan2(other.y - e.y, other.x - e.x);
+        } else if (other.mass > e.mass * 1.2 && d < closestThreatDist) {
+          closestThreatDist = d;
+          bestAngle = Math.atan2(e.y - other.y, e.x - other.x);
+        }
+      });
+      e.targetAngle = bestAngle;
+    }
+    const aiSpeed = 2.6 * Math.pow(80 / Math.max(e.mass, 1), 0.14);
+    e.x += Math.cos(e.targetAngle) * aiSpeed;
+    e.y += Math.sin(e.targetAngle) * aiSpeed;
+    e.x = Math.max(e.r, Math.min(WORLD_SIZE - e.r, e.x));
+    e.y = Math.max(e.r, Math.min(WORLD_SIZE - e.r, e.y));
+  });
+
+  // ── 吞噬判定（細胞 vs 細胞）──
+  for (let i = entities.length - 1; i >= 0; i--) {
+    const a = entities[i];
+    if (!a) continue;
+    for (let j = entities.length - 1; j >= 0; j--) {
+      if (i === j || !entities[i] || !entities[j]) continue;
+      const b = entities[j];
+
+      // 同一玩家（同 ID）的分裂細胞不互吃
+      if (a.id === b.id) continue;
+
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < a.r * 0.82 && a.mass > b.mass * 1.15) {
+        a.updateMass(a.mass + b.mass * 0.78);
+        if (!b.isBot) {
+          playerCells = playerCells.filter(c => c !== b);
+        }
+        entities.splice(j, 1);
+        if (j < i) i--;
+      }
+    }
+
+    // 吃食物
+    if (!entities[i]) continue;
+    for (let f = foods.length - 1; f >= 0; f--) {
+      if (Math.hypot(entities[i].x - foods[f].x, entities[i].y - foods[f].y) < entities[i].r) {
+        entities[i].updateMass(entities[i].mass + 1.5);
+        foods.splice(f, 1);
+        spawnFood();
+      }
+    }
+
+    // 吃噴射食丸
+    for (let p = ejectedPellets.length - 1; p >= 0; p--) {
+      if (!ejectedPellets[p] || !entities[i]) continue;
+      const pel = ejectedPellets[p];
+      if (Math.hypot(entities[i].x - pel.x, entities[i].y - pel.y) < entities[i].r + pel.r) {
+        entities[i].updateMass(entities[i].mass + pel.mass);
+        ejectedPellets.splice(p, 1);
+      }
+    }
+  }
+
+  // ── 噴射食丸物理 ──
+  for (let p = ejectedPellets.length - 1; p >= 0; p--) {
+    const pel = ejectedPellets[p];
+    pel.x += pel.vx; pel.y += pel.vy;
+    pel.vx *= 0.86; pel.vy *= 0.86;
+    pel.life--;
+    if (pel.life <= 0) ejectedPellets.splice(p, 1);
+  }
+
+  // ── 補充 AI 數量 ──
+  const botCount = entities.filter(e => e.isBot).length;
+  if (botCount < MAX_BOTS) spawnBot(botCount);
+
+  // ── HUD 質量 ──
+  const totalMass = playerCells.reduce((s, c) => s + Math.floor(c.mass), 0);
+  document.getElementById('massDisplay').innerText = totalMass;
+
+  // ── 本地排行榜 ──
+  updateLocalLeaderboard();
+
+  // ── Firebase 同步（每 3 秒）──
+  const now = Date.now();
+  if (now - lastSyncTime > 3000 && playerCells.length > 0) {
+    lastSyncTime = now;
+    syncMyData();
+  }
+}
+
+function updateLocalLeaderboard() {
+  const myName = playerCells[0]?.name;
+  const top = [...entities].sort((a, b) => b.mass - a.mass).slice(0, 8);
+  document.getElementById('local-lb-content').innerHTML = top.map((e, i) =>
+    `<div class="lb-entry ${e.name === myName ? 'me' : ''}">
+       <span><span class="lb-rank">${i + 1}.</span> ${e.name}</span>
+       <span>${Math.floor(e.mass)}</span>
+     </div>`
+  ).join('');
+}
+
+// =====================================================
+// 9. 繪圖
+// =====================================================
+function draw() {
+  ctx.fillStyle = '#060810';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  ctx.scale(camera.scale, camera.scale);
+  ctx.translate(-camera.x, -camera.y);
+
+  // 網格
+  ctx.strokeStyle = '#0d1220'; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let i = 0; i <= WORLD_SIZE; i += 100) {
+    ctx.moveTo(i, 0); ctx.lineTo(i, WORLD_SIZE);
+    ctx.moveTo(0, i); ctx.lineTo(WORLD_SIZE, i);
+  }
+  ctx.stroke();
+
+  // 世界邊界
+  ctx.strokeStyle = '#1a2a1a'; ctx.lineWidth = 5;
+  ctx.strokeRect(0, 0, WORLD_SIZE, WORLD_SIZE);
+
+  // 食物
+  foods.forEach(f => {
+    ctx.fillStyle = f.color;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // 噴射食丸
+  ejectedPellets.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = p.life / 80;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // 遠端玩家（Ghost 渲染）
+  for (const id in remotePlayers) {
+    if (id === playerId) continue;
+    const rp = remotePlayers[id];
+    if (Date.now() - rp.lastUpdate > 5000) continue;
+    const r = 15 + Math.pow(rp.mass, 0.45) * 2;
+    ctx.save();
+    ctx.translate(rp.x, rp.y);
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = rp.color;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ff3355'; ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'white'; ctx.textAlign = 'center';
+    ctx.font = `bold ${Math.max(11, r * 0.32)}px Rajdhani, Arial`;
+    ctx.fillText(rp.name, 0, r * 0.1);
+    ctx.restore();
+  }
+
+  // 細胞（由小到大繪製避免遮擋）
+  [...entities].sort((a, b) => a.mass - b.mass).forEach(e => e.draw());
+
+  ctx.restore();
+}
+
+// =====================================================
+// 10. Firebase 同步
+// =====================================================
+function syncMyData() {
+  if (playerCells.length === 0) return;
+  const main = [...playerCells].sort((a, b) => b.mass - a.mass)[0];
+  const totalMass = playerCells.reduce((s, c) => s + Math.floor(c.mass), 0);
+  db.ref('players/' + playerId).set({
+    name: main.name, x: Math.floor(main.x), y: Math.floor(main.y),
+    mass: totalMass, color: main.colorStr, lastUpdate: Date.now()
+  });
+  db.ref('leaderboard/' + playerId).set({ name: main.name, score: totalMass });
+}
+
+// 全球排行榜監聽
+db.ref('leaderboard').orderByChild('score').limitToLast(10).on('value', snap => {
+  const list = [];
+  snap.forEach(child => list.push(child.val()));
+  list.reverse();
+  document.getElementById('global-lb-content').innerHTML = list.map((v, i) =>
+    `<div class="lb-entry"><span><span class="lb-rank">${i + 1}.</span> ${v.name}</span><span>${v.score}</span></div>`
+  ).join('');
+});
+
+// 遠端玩家監聽
+db.ref('players').on('value', snap => { remotePlayers = snap.val() || {}; });
+
+// =====================================================
+// 11. 結算
+// =====================================================
+function gameOver() {
+  if (!gameRunning) return;
+  gameRunning = false;
+  canvas.classList.remove('playing');
+  bgm.pause(); isMusicPlaying = false;
+  db.ref('players/' + playerId).remove();
+
+  const dur = Math.floor((Date.now() - startTime) / 1000);
+  document.getElementById('resMass').innerText = Math.floor(peakMass);
+  document.getElementById('resTime').innerText = dur + 's';
+  document.getElementById('deathScreen').style.display = 'flex';
+
+  // 全球名次計算
+  db.ref('leaderboard').orderByChild('score').once('value', snap => {
+    const count = snap.numChildren();
+    let rank = count;
+    snap.forEach(c => { if (c.val().score <= Math.floor(peakMass)) rank--; });
+    document.getElementById('globalRankText').innerText =
+      `全球排名：第 ${rank + 1} 名（共 ${count} 位玩家）`;
+  });
+}
+
+// =====================================================
+// 12. 主循環 & 視窗縮放
+// =====================================================
+function loop() {
+  if (!gameRunning) return;
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', () => {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
 </script>
 </body>
 </html>
